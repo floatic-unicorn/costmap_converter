@@ -64,7 +64,7 @@ typedef std::shared_ptr<std::vector<geometry_msgs::msg::Polygon>> PolygonContain
 typedef std::shared_ptr<const std::vector<geometry_msgs::msg::Polygon>> PolygonContainerConstPtr;
   
 template <typename NodeT, typename ParamType>
-ParamType declareAndGetParam(const NodeT & node, const std::string & param_name, const ParamType resultdefault_value = ParamType())
+ParamType declareAndGetParam(const NodeT & node, const std::string & param_name, const ParamType default_value = ParamType())
 {
   if(!node->has_parameter(param_name)){
     node->declare_parameter(param_name, rclcpp::ParameterValue(default_value));
