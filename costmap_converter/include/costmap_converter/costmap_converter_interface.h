@@ -269,8 +269,12 @@ protected:
      */
     void workerCallback()
     {
+      RCLCPP_INFO(nh_->get_logger(), "start compute..");
+      auto now = nh_->now();
       updateCostmap2D();
       compute();
+      auto ex_time = nh_->now() - now;
+      RCLCPP_INFO(nh_->get_logger(), "converting time : %f", ex_time.seconds());
     }
 
     rclcpp::Logger getLogger() const

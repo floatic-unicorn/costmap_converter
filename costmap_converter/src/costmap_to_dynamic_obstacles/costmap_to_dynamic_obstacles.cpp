@@ -69,7 +69,7 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
   blob_det_params.maxThreshold = 255;
   blob_det_params.minRepeatability = 1;
 
-  blob_det_params.minDistBetweenBlobs = declareAndGetParam(nh, "min_distance_between_blobs", 10);
+  blob_det_params.minDistBetweenBlobs = declareAndGetParam(nh, "min_distance_between_blobs", 10.0);
 
   blob_det_params.filterByArea = declareAndGetParam(nh, "filter_by_area", true);
 
@@ -146,7 +146,6 @@ void CostmapToDynamicObstacles::compute()
   {
     // Get static obstacles
     bg_mat = costmap_mat_ - fg_mask_;
-    // visualize("bg_mat", bg_mat);
   }
 
 
@@ -335,7 +334,7 @@ void CostmapToDynamicObstacles::updateCostmap2D()
   // Initialize costmapMat_ directly with the unsigned char array of costmap_
   //costmap_mat_ = cv::Mat(costmap_->getSizeInCellsX(), costmap_->getSizeInCellsY(), CV_8UC1,
   //                      costmap_->getCharMap()).clone(); // Deep copy: TODO
-  costmap_mat_ = cv::Mat(costmap_->getSizeInCellsX(), costmap_->getSizeInCellsY(), CV_8UC1,
+  costmap_mat_ = cv::Mat(costmap_->getSizeInCellsY(), costmap_->getSizeInCellsX(), CV_8UC1,
                         costmap_->getCharMap());
 }
 

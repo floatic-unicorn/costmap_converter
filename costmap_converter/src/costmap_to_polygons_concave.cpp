@@ -58,25 +58,9 @@ CostmapToPolygonsDBSConcaveHull::~CostmapToPolygonsDBSConcaveHull()
 
 void CostmapToPolygonsDBSConcaveHull::initialize(rclcpp::Node::SharedPtr nh)
 { 
-  BaseCostmapToPolygons::initialize(nh);
-  
-  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
-  RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
-  
-  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
-  RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
-  
-  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
-  RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
-  
-  parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
-  RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
-
-  parameter_buffered_ = parameter_;
-
+  CostmapToPolygonsDBSMCCH::initialize(nh);
   concave_hull_depth_ = declareAndGetParam(nh, "concave_hull_depth", 2.0);
   RCLCPP_INFO(nh->get_logger(), "concave hull depth : %f", concave_hull_depth_);
-  
 }
 
 

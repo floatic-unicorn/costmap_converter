@@ -123,12 +123,16 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
   costmap_ = NULL;
 
   parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
-
+  RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
+  
   parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
-
+  RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
+  
   parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
-
+  RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
+  
   parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
+  RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
 
   parameter_buffered_ = parameter_;
 
@@ -196,7 +200,7 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       }
 
       std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*costmap_->getMutex());
-
+      
       // allocate neighbor lookup
       int cells_x = int(costmap_->getSizeInMetersX() / parameter_.max_distance_) + 1;
       int cells_y = int(costmap_->getSizeInMetersY() / parameter_.max_distance_) + 1;
@@ -212,6 +216,7 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
         n.clear();
 
       // get indices of obstacle cells
+      
       for(std::size_t i = 0; i < costmap_->getSizeInCellsX(); i++)
       {
         for(std::size_t j = 0; j < costmap_->getSizeInCellsY(); j++)

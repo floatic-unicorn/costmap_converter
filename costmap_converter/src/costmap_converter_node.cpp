@@ -117,11 +117,15 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     declare_parameter("odom_topic", rclcpp::ParameterValue(odom_topic));
     get_parameter_or<std::string>("odom_topic", odom_topic, odom_topic);
 
+    double rate = 10;
+    declare_parameter("spin_rate", rclcpp::ParameterValue(rate));
+    get_parameter_or<double>("spin_rate", rate, rate);
+
     if (converter_) {
       converter_->setOdomTopic(odom_topic);
       converter_->initialize(
           std::make_shared<rclcpp::Node>("intra_node", "costmap_converter"));
-      converter_->startWorker(std::make_shared<rclcpp::Rate>(5),
+      converter_->startWorker(std::make_shared<rclcpp::Rate>(rate),
                               costmap_ros_->getCostmap(), true);
     }
 
