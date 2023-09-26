@@ -118,25 +118,21 @@ CostmapToPolygonsDBSMCCH::~CostmapToPolygonsDBSMCCH()
 
 void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
 {
-    BaseCostmapToPolygons::initialize(nh);
+  BaseCostmapToPolygons::initialize(nh);
 
-    costmap_ = NULL;
+  costmap_ = NULL;
 
-    parameter_.max_distance_ = 0.4;
-    nh->get_parameter_or<double>("cluster_max_distance", parameter_.max_distance_, parameter_.max_distance_);
+  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
 
-    parameter_.min_pts_ = 2;
-    nh->get_parameter_or<int>("cluster_min_pts", parameter_.min_pts_, parameter_.min_pts_);
+  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
 
-    parameter_.max_pts_ = 30;
-    nh->get_parameter_or<int>("cluster_max_pts", parameter_.max_pts_, parameter_.max_pts_);
+  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
 
-    parameter_.min_keypoint_separation_ = 0.1;
-    nh->get_parameter_or<double>("convex_hull_min_pt_separation", parameter_.min_keypoint_separation_, parameter_.min_keypoint_separation_);
+  parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
 
-    parameter_buffered_ = parameter_;
+  parameter_buffered_ = parameter_;
 
-    // setup dynamic reconfigure
+// setup dynamic reconfigure
 //    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>(nh);
 //    dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>::CallbackType cb = boost::bind(&CostmapToPolygonsDBSMCCH::reconfigureCB, this, _1, _2);
 //    dynamic_recfg_->setCallback(cb);

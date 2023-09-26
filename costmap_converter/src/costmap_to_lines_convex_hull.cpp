@@ -61,42 +61,23 @@ void CostmapToLinesDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
     BaseCostmapToPolygons::initialize(nh);
     
     // DB SCAN
-    parameter_.max_distance_ = 0.4;
-    nh->get_parameter_or<double>("cluster_max_distance", parameter_.max_distance_, parameter_.max_distance_);
+    parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
     
-    parameter_.min_pts_ = 2;
-    nh->get_parameter_or<int>("cluster_min_pts", parameter_.min_pts_, parameter_.min_pts_);
+    parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
     
-    parameter_.max_pts_ = 30;
-    nh->get_parameter_or<int>("cluster_max_pts", parameter_.max_pts_, parameter_.max_pts_);
+    parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
     
     // convex hull
-    parameter_.min_keypoint_separation_ = 0.1;
-    nh->get_parameter_or<double>("convex_hull_min_pt_separation", parameter_.min_keypoint_separation_, parameter_.min_keypoint_separation_);
+    parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
     
     parameter_buffered_ = parameter_;
 
     // Line extraction
-    support_pts_max_dist_ = 0.3;
-    nh->get_parameter_or<double>("support_pts_max_dist", support_pts_max_dist_, support_pts_max_dist_);
+    support_pts_max_dist_ = declareAndGetParam(nh, "support_pts_max_dist", 0.3);
     
-    support_pts_max_dist_inbetween_ = 1.0;
-    nh->get_parameter_or<double>("support_pts_max_dist_inbetween", support_pts_max_dist_inbetween_, support_pts_max_dist_inbetween_);
+    support_pts_max_dist_inbetween_ = declareAndGetParam(nh, "support_pts_max_dist_inbetween", 1.0);
     
-    min_support_pts_ = 2;
-    nh->get_parameter_or<int>("min_support_pts", min_support_pts_, min_support_pts_);
-    
-    // setup dynamic reconfigure
-//    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToLinesDBSMCCHConfig>(nh);
-//    dynamic_reconfigure::Server<CostmapToLinesDBSMCCHConfig>::CallbackType cb = boost::bind(&CostmapToLinesDBSMCCH::reconfigureCB, this, _1, _2);
-//    dynamic_recfg_->setCallback(cb);
-    
-    // deprecated
-    rclcpp::Parameter dummy;
-    if (nh->get_parameter("support_pts_min_dist_", dummy) || nh->get_parameter("support_pts_min_dist", dummy))
-      RCLCPP_WARN(nh->get_logger(), "CostmapToLinesDBSMCCH: Parameter 'support_pts_min_dist' is deprecated and not included anymore.");
-    if (nh->get_parameter("min_support_pts_", dummy))
-      RCLCPP_WARN(nh->get_logger(), "CostmapToLinesDBSMCCH: Parameter 'min_support_pts_' is not found. Remove the underscore.");
+    min_support_pts_ = declareAndGetParam(nh, "min_support_pts", 2);
 }  
   
 void CostmapToLinesDBSMCCH::compute()

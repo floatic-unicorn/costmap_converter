@@ -57,47 +57,37 @@ CostmapToLinesDBSRANSAC::~CostmapToLinesDBSRANSAC()
   
 void CostmapToLinesDBSRANSAC::initialize(rclcpp::Node::SharedPtr nh)
 { 
-    BaseCostmapToPolygons::initialize(nh);
-    
-    // DB SCAN
-    parameter_.max_distance_ = 0.4;
-    nh->get_parameter_or<double>("cluster_max_distance", parameter_.max_distance_, parameter_.max_distance_);
-    
-    parameter_.min_pts_ = 2;
-    nh->get_parameter_or<int>("cluster_min_pts", parameter_.min_pts_, parameter_.min_pts_);
-    
-    parameter_.max_pts_ = 30;
-    nh->get_parameter_or<int>("cluster_max_pts", parameter_.max_pts_, parameter_.max_pts_);
-    
-    // convex hull (only necessary if outlier filtering is enabled)
-    parameter_.min_keypoint_separation_ = 0.1;
-    nh->get_parameter_or<double>("convex_hull_min_pt_separation", parameter_.min_keypoint_separation_, parameter_.min_keypoint_separation_);
+  BaseCostmapToPolygons::initialize(nh);
+  
+  // DB SCAN
+  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
+  
+  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
+  
+  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
+  
+  // convex hull (only necessary if outlier filtering is enabled)
+  parameter_.min_keypoint_separation_ =  declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
 
-    parameter_buffered_ = parameter_;
+  parameter_buffered_ = parameter_;
 
-    // ransac
-    ransac_inlier_distance_ = 0.2;
-    nh->get_parameter_or<double>("ransac_inlier_distance", ransac_inlier_distance_, ransac_inlier_distance_);
-    
-    ransac_min_inliers_ = 10;
-    nh->get_parameter_or<int>("ransac_min_inliers", ransac_min_inliers_, ransac_min_inliers_);
-    
-    ransac_no_iterations_ = 2000;
-    nh->get_parameter_or<int>("ransac_no_iterations", ransac_no_iterations_, ransac_no_iterations_);
-   
-    ransac_remainig_outliers_ = 3;
-    nh->get_parameter_or<int>("ransac_remainig_outliers", ransac_remainig_outliers_, ransac_remainig_outliers_);
-    
-    ransac_convert_outlier_pts_ = true;
-    nh->get_parameter_or<bool>("ransac_convert_outlier_pts", ransac_convert_outlier_pts_, ransac_convert_outlier_pts_);
-    
-    ransac_filter_remaining_outlier_pts_ = false;
-    nh->get_parameter_or<bool>("ransac_filter_remaining_outlier_pts", ransac_filter_remaining_outlier_pts_, ransac_filter_remaining_outlier_pts_);
-    
-    // setup dynamic reconfigure
-//    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToLinesDBSRANSACConfig>(nh);
-//    dynamic_reconfigure::Server<CostmapToLinesDBSRANSACConfig>::CallbackType cb = boost::bind(&CostmapToLinesDBSRANSAC::reconfigureCB, this, _1, _2);
-//    dynamic_recfg_->setCallback(cb);
+  // ransac
+  ransac_inlier_distance_ = declareAndGetParam(nh, "ransac_inlier_distance", 0.2);
+  
+  ransac_min_inliers_ = declareAndGetParam(nh, "ransac_min_inliers", 10);
+  
+  ransac_no_iterations_ = declareAndGetParam(nh, "ransac_no_iterations", 2000);
+  
+  ransac_remainig_outliers_ = declareAndGetParam(nh, "ransac_remainig_outliers", 3);
+  
+  ransac_convert_outlier_pts_ = declareAndGetParam(nh, "ransac_convert_outlier_pts", true);
+  
+  ransac_filter_remaining_outlier_pts_ = declareAndGetParam(nh, "ransac_filter_remaining_outlier_pts", false);
+  
+  // setup dynamic reconfigure
+  //    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToLinesDBSRANSACConfig>(nh);
+  //    dynamic_reconfigure::Server<CostmapToLinesDBSRANSACConfig>::CallbackType cb = boost::bind(&CostmapToLinesDBSRANSAC::reconfigureCB, this, _1, _2);
+  //    dynamic_recfg_->setCallback(cb);
 }  
   
 void CostmapToLinesDBSRANSAC::compute()

@@ -36,32 +36,25 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
               rclcpp::SystemDefaultsQoS(),
               std::bind(&CostmapToDynamicObstacles::odomCallback, this, std::placeholders::_1));
 
-  nh->get_parameter_or<bool>("publish_static_obstacles", publish_static_obstacles_, publish_static_obstacles_);
+  publish_static_obstacles_ = declareAndGetParam(nh, "publish_static_obstacles", true);
 
   //////////////////////////////////
   // Foreground detection parameters
   BackgroundSubtractor::Params bg_sub_params;
 
-  bg_sub_params.alpha_slow = 0.3;
-  nh->get_parameter_or<double>("alpha_slow", bg_sub_params.alpha_slow, bg_sub_params.alpha_slow);
+  bg_sub_params.alpha_slow = declareAndGetParam(nh, "alpha_slow", 0.3);
 
-  bg_sub_params.alpha_fast = 0.85;
-  nh->get_parameter_or<double>("alpha_fast", bg_sub_params.alpha_fast, bg_sub_params.alpha_fast);
+  bg_sub_params.alpha_fast = declareAndGetParam(nh, "alpha_fast", 0.85);
 
-  bg_sub_params.beta = 0.85;
-  nh->get_parameter_or<double>("beta", bg_sub_params.beta, bg_sub_params.beta);
+  bg_sub_params.beta = declareAndGetParam(nh, "beta", 0.85);
 
-  bg_sub_params.min_occupancy_probability = 180;
-  nh->get_parameter_or<double>("min_occupancy_probability", bg_sub_params.min_occupancy_probability, bg_sub_params.min_occupancy_probability);
+  bg_sub_params.min_occupancy_probability = declareAndGetParam(nh, "min_occupancy_probability", 180);
 
-  bg_sub_params.min_sep_between_fast_and_slow_filter = 80;
-  nh->get_parameter_or<double>("min_sep_between_slow_and_fast_filter", bg_sub_params.min_sep_between_fast_and_slow_filter, bg_sub_params.min_sep_between_fast_and_slow_filter);
+  bg_sub_params.min_sep_between_fast_and_slow_filter = declareAndGetParam(nh, "min_sep_between_slow_and_fast_filter", 80);
 
-  bg_sub_params.max_occupancy_neighbors = 100;
-  nh->get_parameter_or<double>("max_occupancy_neighbors", bg_sub_params.max_occupancy_neighbors, bg_sub_params.max_occupancy_neighbors);
+  bg_sub_params.max_occupancy_neighbors = declareAndGetParam(nh, "max_occupancy_neighbors", 100);
 
-  bg_sub_params.morph_size = 1;
-  nh->get_parameter_or<int>("morph_size", bg_sub_params.morph_size, bg_sub_params.morph_size);
+  bg_sub_params.morph_size = declareAndGetParam(nh, "morph_size", 1);
 
   bg_sub_ = std::unique_ptr<BackgroundSubtractor>(new BackgroundSubtractor(bg_sub_params));
 
@@ -76,69 +69,51 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
   blob_det_params.maxThreshold = 255;
   blob_det_params.minRepeatability = 1;
 
-  blob_det_params.minDistBetweenBlobs = 10;
-  nh->get_parameter_or<float>("min_distance_between_blobs", blob_det_params.minDistBetweenBlobs, blob_det_params.minDistBetweenBlobs);
+  blob_det_params.minDistBetweenBlobs = declareAndGetParam(nh, "min_distance_between_blobs", 10);
 
-  blob_det_params.filterByArea = true;
-  nh->get_parameter_or<bool>("filter_by_area", blob_det_params.filterByArea, blob_det_params.filterByArea);
+  blob_det_params.filterByArea = declareAndGetParam(nh, "filter_by_area", true);
 
-  blob_det_params.minArea = 3; // Filter out blobs with less pixels
-  nh->get_parameter_or<float>("min_area", blob_det_params.minArea, blob_det_params.minArea);
+  blob_det_params.minArea = declareAndGetParam(nh, "min_area", 3); // Filter out blobs with less pixels
 
-  blob_det_params.maxArea = 300;
-  nh->get_parameter_or<float>("max_area", blob_det_params.maxArea, blob_det_params.maxArea);
+  blob_det_params.maxArea = declareAndGetParam(nh, "max_area", 300);
 
-  blob_det_params.filterByCircularity = true; // circularity = 4*pi*area/perimeter^2
-  nh->get_parameter_or<bool>("filter_by_circularity", blob_det_params.filterByCircularity, blob_det_params.filterByCircularity);
+  blob_det_params.filterByCircularity = declareAndGetParam(nh, "filter_by_circularity", true); // circularity = 4*pi*area/perimeter^2
 
-  blob_det_params.minCircularity = 0.2;
-  nh->get_parameter_or<float>("min_circularity", blob_det_params.minCircularity, blob_det_params.minCircularity);
+  blob_det_params.minCircularity = declareAndGetParam(nh, "min_circularity", 0.2);
 
-  blob_det_params.maxCircularity = 1; // maximal 1 (in case of a circle)
-  nh->get_parameter_or<float>("max_circularity", blob_det_params.maxCircularity, blob_det_params.maxCircularity);
+  blob_det_params.maxCircularity = declareAndGetParam(nh, "max_circularity", 1.0);
 
-  blob_det_params.filterByInertia = true; // Filter blobs based on their elongation
-  nh->get_parameter_or<bool>("filter_by_intertia", blob_det_params.filterByInertia, blob_det_params.filterByInertia);
+  blob_det_params.filterByInertia = declareAndGetParam(nh, "filter_by_intertia", true); // Filter blobs based on their elongation
 
-  blob_det_params.minInertiaRatio = 0.2;  // minimal 0 (in case of a line)
-  nh->get_parameter_or<float>("min_inertia_ratio", blob_det_params.minInertiaRatio, blob_det_params.minInertiaRatio);
+  blob_det_params.minInertiaRatio = declareAndGetParam(nh, "min_inertia_ratio", 0.2);   // minimal 0 (in case of a line)
 
-  blob_det_params.maxInertiaRatio = 1;    // maximal 1 (in case of a circle)
-  nh->get_parameter_or<float>("max_intertia_ratio", blob_det_params.maxInertiaRatio, blob_det_params.maxInertiaRatio);
+  blob_det_params.maxInertiaRatio = declareAndGetParam(nh, "max_intertia_ratio", 1.0);    // maximal 1 (in case of a circle)
 
-  blob_det_params.filterByConvexity = false; // Area of the Blob / Area of its convex hull
-  nh->get_parameter_or<bool>("filter_by_convexity", blob_det_params.filterByConvexity, blob_det_params.filterByConvexity);
+  blob_det_params.filterByConvexity = declareAndGetParam(nh, "filter_by_convexity", false); // Area of the Blob / Area of its convex hull
 
-  blob_det_params.minConvexity = 0;          // minimal 0
-  nh->get_parameter_or<float>("min_convexity", blob_det_params.minConvexity, blob_det_params.minConvexity);
+  blob_det_params.minConvexity = declareAndGetParam(nh, "min_convexity", 0.0);          // minimal 0
 
-  blob_det_params.maxConvexity = 1;          // maximal 1
-  nh->get_parameter_or<float>("max_convexity", blob_det_params.maxConvexity, blob_det_params.maxConvexity);
+  blob_det_params.maxConvexity = declareAndGetParam(nh, "max_convexity", 1.0);         // maximal 1
 
   blob_det_ = BlobDetector::create(blob_det_params);
 
   ////////////////////////////////////
   // Tracking parameters
   CTracker::Params tracker_params;
-  tracker_params.dt = 0.2;
-  nh->get_parameter_or<float>("dt", tracker_params.dt, tracker_params.dt);
+  tracker_params.dt = declareAndGetParam(nh, "dt", 0.2);
 
-  tracker_params.dist_thresh = 60.0;
-  nh->get_parameter_or<float>("dist_thresh", tracker_params.dist_thresh, tracker_params.dist_thresh);
+  tracker_params.dist_thresh = declareAndGetParam(nh, "dist_thresh", 60.0);
 
-  tracker_params.max_allowed_skipped_frames = 3;
-  nh->get_parameter_or<int>("max_allowed_skipped_frames", tracker_params.max_allowed_skipped_frames, tracker_params.max_allowed_skipped_frames);
+  tracker_params.max_allowed_skipped_frames = declareAndGetParam(nh, "max_allowed_skipped_frames", 3);
 
-  tracker_params.max_trace_length = 10;
-  nh->get_parameter_or<int>("max_trace_length", tracker_params.max_trace_length, tracker_params.max_trace_length);
+  tracker_params.max_trace_length = declareAndGetParam(nh, "max_trace_length", 10);
 
   tracker_ = std::unique_ptr<CTracker>(new CTracker(tracker_params));
 
 
   ////////////////////////////////////
   // Static costmap conversion parameters
-  std::string static_converter_plugin = "costmap_converter::CostmapToPolygonsDBSMCCH";
-  nh->get_parameter_or<std::string>("static_converter_plugin", static_converter_plugin, static_converter_plugin);
+  std::string static_converter_plugin = declareAndGetParam(nh, "static_converter_plugin", std::string("costmap_converter::CostmapToPolygonsDBSMCCH")) ;
   loadStaticCostmapConverterPlugin(static_converter_plugin, nh);
 
 
