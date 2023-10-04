@@ -36,6 +36,7 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
               rclcpp::SystemDefaultsQoS(),
               std::bind(&CostmapToDynamicObstacles::odomCallback, this, std::placeholders::_1));
 
+  costmap_frame_id_ = declareAndGetParam(nh, "costmap_frame_id", std::string("map"));
   publish_static_obstacles_ = declareAndGetParam(nh, "publish_static_obstacles", true);
 
   //////////////////////////////////
@@ -114,8 +115,9 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
   ////////////////////////////////////
   // Static costmap conversion parameters
   std::string static_converter_plugin = declareAndGetParam(nh, "static_converter_plugin", std::string("costmap_converter::CostmapToPolygonsDBSMCCH")) ;
-  loadStaticCostmapConverterPlugin(static_converter_plugin, nh);
-
+  if(static_converter_plugin != ""){
+    loadStaticCostmapConverterPlugin(static_converter_plugin, nh);
+  }
 
   // setup dynamic reconfigure
 //  dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToDynamicObstaclesConfig>(nh);
@@ -146,6 +148,7 @@ void CostmapToDynamicObstacles::compute()
   {
     // Get static obstacles
     bg_mat = costmap_mat_ - fg_mask_;
+    // visualize("bg_mat", bg_mat);
   }
 
 
@@ -187,7 +190,7 @@ void CostmapToDynamicObstacles::compute()
   ObstacleArrayPtr obstacles(new costmap_converter_msgs::msg::ObstacleArrayMsg);
   // header.seq is automatically filled
   obstacles->header.stamp = now();
-  obstacles->header.frame_id = "/map"; //Global frame /map
+  obstacles->header.frame_id = costmap_frame_id_; //Global frame /map
 
   // For all tracked objects
   for (unsigned int i = 0; i < (unsigned int)tracker_->tracks.size(); ++i)
@@ -244,10 +247,11 @@ void CostmapToDynamicObstacles::compute()
 
     obstacles->obstacles.back().velocities = velocities;
   }
-
+  // std::cout<<"dynamic obstacle size : "<<obstacles->obstacles.size()<<std::endl;
   ////////////////////////// Static obstacles ////////////////////////////
   if (publish_static_obstacles_)
   {
+    // size_t prev_obstacle_num = obstacles->obstacles.size();
     uchar* img_data = bg_mat.data;
     int width = bg_mat.cols;
     int height = bg_mat.rows;
@@ -307,8 +311,8 @@ void CostmapToDynamicObstacles::compute()
         }
       }
     }
+    // std::cout<<"static obstacle size : "<<obstacles->obstacles.size() - prev_obstacle_num<<std::endl;
   }
-
   updateObstacleContainer(obstacles);
 }
 
@@ -455,7 +459,7 @@ void CostmapToDynamicObstacles::visualize(const std::string& name, const cv::Mat
   if (!image.empty())
   {
     cv::Mat im = image.clone();
-    cv::flip(im, im, 0);
+    cv::flip(im, im, 1);
     cv::imshow(name, im);
     cv::waitKey(1);
   }

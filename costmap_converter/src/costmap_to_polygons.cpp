@@ -145,6 +145,13 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
 
 void CostmapToPolygonsDBSMCCH::compute()
 {
+    std::lock_guard<std::recursive_mutex> lock_guard(*costmap_->getMutex());
+    int cells_x = int(costmap_->getSizeInMetersX() / parameter_.max_distance_) + 1;
+    int cells_y = int(costmap_->getSizeInMetersY() / parameter_.max_distance_) + 1;
+    if(cells_x != neighbor_size_x_ || cells_y != neighbor_size_y_){
+      updateCostmap2D();
+    }
+
     std::vector< std::vector<KeyPoint> > clusters;
     dbScan(clusters);
 

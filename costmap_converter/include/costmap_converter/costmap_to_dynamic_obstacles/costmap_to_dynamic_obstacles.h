@@ -182,6 +182,7 @@ private:
   Point_t ego_vel_;
 
   std::string odom_topic_ = "/odom";
+  std::string costmap_frame_id_ = "map";
   bool publish_static_obstacles_ = true;
 
 //  dynamic_reconfigure::Server<CostmapToDynamicObstaclesConfig>*

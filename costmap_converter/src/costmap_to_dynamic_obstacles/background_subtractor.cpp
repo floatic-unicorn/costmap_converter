@@ -1,6 +1,7 @@
 #include <opencv2/highgui/highgui.hpp>
 //#include <opencv2/cvv/cvv.hpp>
 #include <costmap_converter/costmap_to_dynamic_obstacles/background_subtractor.h>
+#include <iostream>
 
 BackgroundSubtractor::BackgroundSubtractor(const Params &parameters): params_(parameters)
 {
@@ -9,14 +10,14 @@ BackgroundSubtractor::BackgroundSubtractor(const Params &parameters): params_(pa
 void BackgroundSubtractor::apply(const cv::Mat& image, cv::Mat& fg_mask, int shift_x, int shift_y)
 {
   current_frame_ = image;
-
   // occupancy grids are empty only once in the beginning -> initialize variables
-  if (occupancy_grid_fast_.empty() && occupancy_grid_slow_.empty())
+  if (occupancy_grid_fast_.empty() || occupancy_grid_slow_.empty() || occupancy_grid_fast_.size() != current_frame_.size() || occupancy_grid_slow_.size() != current_frame_.size())
   {
     occupancy_grid_fast_ = current_frame_;
     occupancy_grid_slow_ = current_frame_;
     previous_shift_x_ = shift_x;
     previous_shift_y_ = shift_y;
+    fg_mask = cv::Mat();
     return;
   }
 
