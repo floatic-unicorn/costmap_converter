@@ -39,7 +39,7 @@
 #include <costmap_converter/costmap_to_polygons.h>
 #include <costmap_converter/misc.h>
 #include <pluginlib/class_list_macros.hpp>
-
+#include <costmap_converter/costmap_to_dynamic_obstacles/costmap_to_dynamic_obstacles.h>
 PLUGINLIB_EXPORT_CLASS(costmap_converter::CostmapToPolygonsDBSMCCH, costmap_converter::BaseCostmapToPolygons)
 
 namespace
@@ -67,6 +67,7 @@ std::vector<geometry_msgs::msg::Point32> douglasPeucker(std::vector<geometry_msg
   double dmax = std::numeric_limits<double>::lowest();
   std::vector<geometry_msgs::msg::Point32>::iterator max_dist_it;
   std::vector<geometry_msgs::msg::Point32>::iterator last = std::prev(end);
+  
   for (auto it = std::next(begin); it != last; ++it)
   {
     double d = costmap_converter::computeSquaredDistanceToLineSegment(*it, *begin, *last);
@@ -122,7 +123,7 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
 
   costmap_ = NULL;
 
-  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.4);
+  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.3);
   RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
   
   parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
@@ -135,7 +136,7 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
   RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
 
   parameter_buffered_ = parameter_;
-
+  
 // setup dynamic reconfigure
 //    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>(nh);
 //    dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>::CallbackType cb = boost::bind(&CostmapToPolygonsDBSMCCH::reconfigureCB, this, _1, _2);
@@ -149,12 +150,18 @@ void CostmapToPolygonsDBSMCCH::compute()
     int cells_x = int(costmap_->getSizeInMetersX() / parameter_.max_distance_) + 1;
     int cells_y = int(costmap_->getSizeInMetersY() / parameter_.max_distance_) + 1;
     if(cells_x != neighbor_size_x_ || cells_y != neighbor_size_y_){
+      RCLCPP_INFO(getLogger(), " update costmap ");
       updateCostmap2D();
     }
 
     std::vector< std::vector<KeyPoint> > clusters;
     dbScan(clusters);
-
+    static int obsCount = 0;
+    TrackerContainerPtr currentFrameTrackers(new std::vector<KalmanEigen>());
+    vector<redefObs> redefinedObstacles;
+    vector<redefObs> assignedObstacles;
+    vector<vector<double>> distanceMatrix;
+    vector<int> assignment;
     // Create new polygon container
     PolygonContainerPtr polygons(new std::vector<geometry_msgs::msg::Polygon>());
 
@@ -175,9 +182,192 @@ void CostmapToPolygonsDBSMCCH::compute()
         convertPointToPolygon(clusters.front()[i], polygons->back());
       }
     }
+    //polygons -> currentFrameDetectionObstacles
+    pair<double,double> obstaclePosition;
+    pair<double,double> obstacleVelocity;
+    
+    int historyThreshold = 1;
+    int obstaclesSize = polygons->size();
+    //RCLCPP_INFO(getLogger(), "tracking start ");
+    if(trackers_==nullptr)
+    {
+      RCLCPP_INFO(getLogger(), "Empty Tracker..");
+        
+      for(int i=0; i< obstaclesSize; i++)
+      {
+        double pSumX = 0;
+        double pSumY = 0;
+        size_t len = (*polygons)[i].points.size();
 
+        for(int j=0; j<len; j++)
+        {
+  
+          pSumX += (*polygons)[i].points[j].x;
+          pSumY += (*polygons)[i].points[j].y;
+        }
+        double pMeanX = pSumX/len;
+        double pMeanY = pSumY/len;
+        obstaclePosition = make_pair(pMeanX,pMeanY);
+        obsCount++;
+        KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount);
+        currentFrameTrackers->push_back(tracker);
+        trackers_ = currentFrameTrackers;
+      }
+      RCLCPP_INFO(getLogger(), "Input %d obstacle to trackers",currentFrameTrackers->size());
+    }
+    else
+    {
+      int trackerSize = trackers_->size();
+      //////////////////////////////////////////////////////////////////////
+      ////////////////////////Redefined Obstacle////////////////////////////
+      for(int i=0; i< obstaclesSize; i++)
+      {
+        double pSumX = 0;
+        double pSumY = 0;
+        size_t len = (*polygons)[i].points.size();
+        //RCLCPP_INFO(getLogger(), "Polygon %dth PointNum %d",i,len);
+        for(int j=0; j<len; j++)
+        {
+          
+          pSumX += (*polygons)[i].points[j].x;
+          pSumY += (*polygons)[i].points[j].y;
+        }
+        double pMeanX = pSumX/len;
+        double pMeanY = pSumY/len;
+        redefObs obs = {pMeanX, pMeanY};
+        redefinedObstacles.push_back(obs);
+      }
+
+      //////////////////////////////////////////////////////////////////////
+      ////////////////////////DistanceMatrix Initialize/////////////////////
+      distanceMatrix.clear();
+      distanceMatrix.resize(trackerSize,vector<double>(obstaclesSize,0));
+      for(int i = 0; i<trackerSize; i++)
+      {
+        (*trackers_)[i].predict();
+      }
+      for (int i=0; i<redefinedObstacles.size(); i++)
+      {
+        double pMeanX = redefinedObstacles[i].x;
+        double pMeanY = redefinedObstacles[i].y;
+        RCLCPP_INFO(getLogger(),"Obstacle pos(%.2f,%.2f)",pMeanX,pMeanY);  
+        //RCLCPP_INFO(getLogger(),"Shape %d, %d".distanceMatrix,distanceMatrix[0].size());
+        for(int j = 0; j < trackers_->size(); j++)
+        {
+          pair<double, double> trackerState = (*trackers_)[j].getState(0);
+          distanceMatrix[j][i] = sqrt((pMeanX-trackerState.first) * (pMeanX-trackerState.first) + (pMeanY-trackerState.second) * (pMeanY-trackerState.second)); 
+          //RCLCPP_INFO(getLogger(),"trk %d, obs %d distance %f trkpos %f %f obspos %f %f",j,i,distanceMatrix[j][i],trackerState.first,trackerState.second,pMeanX,pMeanY);
+        }
+      }
+      /////////////////////////////////////////////////////////////////////
+      ///////////////////////Matching//////////////////////////////////////
+      HungAlgo.Solve(distanceMatrix, assignment);
+      // for(int i = trackers_->size()-1; i>-1; i--)
+      // {
+      //   RCLCPP_INFO(getLogger(),"Size %d id %d Assign %d -> %d :: distance %f",trackers_->size(),(*trackers_)[i].id, i,assignment[i], distanceMatrix[i][assignment[i]]);  
+      // }
+      for(int i = 0; i<redefinedObstacles.size(); i++)
+      {
+       
+      }
+      if(redefinedObstacles.size())
+      {
+        for(int i = trackers_->size()-1; i>-1; i--)
+        {
+          if(assignment[i] == -1)
+          {
+            (*trackers_)[i].unmatchedHistory++;
+            if((*trackers_)[i].unmatchedHistory > historyThreshold)
+            {
+              RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
+              trackers_->erase(trackers_->begin() + i);
+            }
+          }
+          else
+          {
+            if(distanceMatrix[i][assignment[i]] < 0.5 && assignment[i] != -1)
+            {
+              assignedObstacles.push_back(redefinedObstacles[assignment[i]]);
+              (*trackers_)[i].update(make_pair(redefinedObstacles[assignment[i]].x,redefinedObstacles[assignment[i]].y));
+              obstaclePosition = (*trackers_)[i].getState(0);
+              obstacleVelocity = (*trackers_)[i].getState(1);
+              double velocity = sqrt(obstacleVelocity.first*obstacleVelocity.first+obstacleVelocity.second*obstacleVelocity.second);
+              //if(velocity > 0.5)
+              //RCLCPP_INFO(getLogger()," Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]);
+              //RCLCPP_INFO(getLogger()," trk %d of %d UnmatchHistory %d, obs %d, distance %lf",(*trackers_)[i].id, trackers_->size(), (*trackers_)[i].unmatchedHistory, assignment[i], distanceMatrix[i][assignment[i]]);
+              //if(velocity >0.1)
+              RCLCPP_INFO(getLogger(),"Tracker id:%d pos(%.2f,%.2f) vel %f",(*trackers_)[i].id,obstaclePosition.first,obstaclePosition.second,velocity);
+              //redefinedObstacles.erase(redefinedObstacles.begin()+assignment[i]);
+              //RCLCPP_INFO(getLogger(),"Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]); 
+            }
+            else
+            {
+              (*trackers_)[i].unmatchedHistory++;
+              if((*trackers_)[i].unmatchedHistory > historyThreshold)
+              {
+                RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
+              
+                trackers_->erase(trackers_->begin() + i);
+              }
+            }
+          }
+        }
+        for(auto obs1 : redefinedObstacles)
+        {
+          bool newsignal = true;
+          for(auto obs2 : assignedObstacles)
+          {
+            if(obs1.x == obs2.x && obs1.y == obs2.y)
+              newsignal=false; 
+          }
+          if(newsignal)
+          {
+            obstaclePosition = make_pair(obs1.x,obs1.y);
+            obsCount++;
+            KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount);
+            trackers_->push_back(tracker);
+            RCLCPP_INFO(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
+          }
+        }
+        // for(int i =0; i<assignment.size(); i++)
+        // {
+        //     if(distanceMatrix[i][assignment[i]]> 0.0000000 && distanceMatrix[i][assignment[i]] < 1.0)
+        //     {
+        //       currentFrameTrackers = trackers_;
+        //       (*currentFrameTrackers)[i].predict(0.05);
+        //       (*currentFrameTrackers)[i].update(make_pair(redefinedObstacles[assignment[i]].x,redefinedObstacles[assignment[i]].y));
+        //       RCLCPP_INFO(getLogger(),"Assign %d to %d, Distance %f",i,assignment[i],distanceMatrix[i][assignment[i]]);
+        //       trackers_ = currentFrameTrackers;
+        //     }
+            
+        //     if(assignment[i] == -1)
+        //     {
+        //       (*trackers_).erase((*trackers_).begin()+i);
+        //     }
+            
+        // }
+      }
+      else  
+      {
+        for(int i = trackers_->size()-1; i>-1; i--)
+        {
+          RCLCPP_INFO(getLogger(),"noObstacles::");
+          (*trackers_)[i].unmatchedHistory++;
+            if((*trackers_)[i].unmatchedHistory > historyThreshold){
+              RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
+              trackers_->erase(trackers_->begin() + i);
+              }
+        }
+      }
+      for(int i = 0; i<trackers_->size(); i++)
+      {
+        (*trackers_)[i].predict();
+      }
+    }
+    
     // replace shared polygon container
     updatePolygonContainer(polygons);
+    //RCLCPP_INFO(getLogger(), "polygon size %d",polygons->size());
 }
 
 void CostmapToPolygonsDBSMCCH::setCostmap2D(nav2_costmap_2d::Costmap2D *costmap)
@@ -488,7 +678,7 @@ void CostmapToPolygonsDBSMCCH::simplifyPolygon(geometry_msgs::msg::Polygon& poly
     return;
   // TODO Reason about better start conditions for splitting lines, e.g., by
   // https://en.wikipedia.org/wiki/Rotating_calipers
-  polygon.points = douglasPeucker(polygon.points.begin(), polygon.points.end(), parameter_.min_keypoint_separation_);;
+  polygon.points = douglasPeucker(polygon.points.begin(), polygon.points.end(), parameter_.min_keypoint_separation_);
 }
 
 void CostmapToPolygonsDBSMCCH::updatePolygonContainer(PolygonContainerPtr polygons)
@@ -496,8 +686,16 @@ void CostmapToPolygonsDBSMCCH::updatePolygonContainer(PolygonContainerPtr polygo
   std::lock_guard<std::mutex> lock(mutex_);
   polygons_ = polygons;
 }
-
-
+// void CostmapToPolygonsDBSMCCH::updateTrackerContainer(TrackerContainerPtr trackers)
+// {
+//   std::lock_guard<std::mutex> lock(mutex_);
+//   trackers_ = trackers;
+// }
+TrackerContainerPtr CostmapToPolygonsDBSMCCH::getTrackers()
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return trackers_;
+}
 PolygonContainerConstPtr CostmapToPolygonsDBSMCCH::getPolygons()
 {
   std::lock_guard<std::mutex> lock(mutex_);

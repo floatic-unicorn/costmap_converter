@@ -66,27 +66,27 @@ void CostmapToDynamicObstacles::initialize(rclcpp::Node::SharedPtr nh)
   blob_det_params.filterByColor = true; // actually filterByIntensity, always true
   blob_det_params.blobColor = 255;      // Extract light blobs
   blob_det_params.thresholdStep = 256;  // Input for blob detection is already a binary image
-  blob_det_params.minThreshold = 127;
-  blob_det_params.maxThreshold = 255;
+  blob_det_params.minThreshold = 1;
+  blob_det_params.maxThreshold = 127;
   blob_det_params.minRepeatability = 1;
 
-  blob_det_params.minDistBetweenBlobs = declareAndGetParam(nh, "min_distance_between_blobs", 10.0);
+  blob_det_params.minDistBetweenBlobs = declareAndGetParam(nh, "min_distance_between_blobs", 1.0);
 
   blob_det_params.filterByArea = declareAndGetParam(nh, "filter_by_area", true);
 
-  blob_det_params.minArea = declareAndGetParam(nh, "min_area", 3); // Filter out blobs with less pixels
+  blob_det_params.minArea = declareAndGetParam(nh, "min_area", 1); // Filter out blobs with less pixels
 
   blob_det_params.maxArea = declareAndGetParam(nh, "max_area", 300);
 
   blob_det_params.filterByCircularity = declareAndGetParam(nh, "filter_by_circularity", true); // circularity = 4*pi*area/perimeter^2
 
-  blob_det_params.minCircularity = declareAndGetParam(nh, "min_circularity", 0.2);
+  blob_det_params.minCircularity = declareAndGetParam(nh, "min_circularity", 0.1);
 
   blob_det_params.maxCircularity = declareAndGetParam(nh, "max_circularity", 1.0);
 
   blob_det_params.filterByInertia = declareAndGetParam(nh, "filter_by_intertia", true); // Filter blobs based on their elongation
 
-  blob_det_params.minInertiaRatio = declareAndGetParam(nh, "min_inertia_ratio", 0.2);   // minimal 0 (in case of a line)
+  blob_det_params.minInertiaRatio = declareAndGetParam(nh, "min_inertia_ratio", 0.0);   // minimal 0 (in case of a line)
 
   blob_det_params.maxInertiaRatio = declareAndGetParam(nh, "max_intertia_ratio", 1.0);    // maximal 1 (in case of a circle)
 
@@ -148,7 +148,9 @@ void CostmapToDynamicObstacles::compute()
   {
     // Get static obstacles
     bg_mat = costmap_mat_ - fg_mask_;
-    // visualize("bg_mat", bg_mat);
+    //visualize("costmap_mat", costmap_mat_);
+    visualize("fg_mask", fg_mask_);
+    visualize("bg_mat", bg_mat);
   }
 
 
@@ -170,8 +172,8 @@ void CostmapToDynamicObstacles::compute()
   }
 
   tracker_->Update(detected_centers, contours);
-
-
+  RCLCPP_INFO(getLogger(), "tracker update..");
+  std::cout<<"tracker size : "<<tracker_->tracks.size()<<std::endl;
   ///////////////////////////////////// Output ///////////////////////////////////////
   /*
   cv::Mat fg_mask_with_keypoints = cv::Mat::zeros(fg_mask.size(), CV_8UC3);
@@ -247,7 +249,7 @@ void CostmapToDynamicObstacles::compute()
 
     obstacles->obstacles.back().velocities = velocities;
   }
-  // std::cout<<"dynamic obstacle size : "<<obstacles->obstacles.size()<<std::endl;
+  std::cout<<"dynamic obstacle size : "<<obstacles->obstacles.size()<<std::endl;
   ////////////////////////// Static obstacles ////////////////////////////
   if (publish_static_obstacles_)
   {
@@ -340,6 +342,7 @@ void CostmapToDynamicObstacles::updateCostmap2D()
   //                      costmap_->getCharMap()).clone(); // Deep copy: TODO
   costmap_mat_ = cv::Mat(costmap_->getSizeInCellsY(), costmap_->getSizeInCellsX(), CV_8UC1,
                         costmap_->getCharMap());
+  visualize("costmap",costmap_mat_);
 }
 
 ObstacleArrayConstPtr CostmapToDynamicObstacles::getObstacles()

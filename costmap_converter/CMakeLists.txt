@@ -24,7 +24,7 @@ find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
-
+find_package(Eigen3 REQUIRED)
 set(dependencies
     class_loader
     costmap_converter_msgs
@@ -54,10 +54,13 @@ add_library(costmap_converter SHARED
   src/costmap_to_dynamic_obstacles/multitarget_tracker/Ctracker.cpp
   src/costmap_to_dynamic_obstacles/multitarget_tracker/Kalman.cpp
   src/costmap_to_dynamic_obstacles/multitarget_tracker/HungarianAlg.cpp
+  src/KalmanEigen.cpp
+  src/Hungarian.cpp
 )
 
 ament_target_dependencies(costmap_converter 
     ${dependencies}
+    Eigen3
 )
 
 add_executable(standalone_converter src/costmap_converter_node.cpp)

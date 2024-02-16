@@ -78,7 +78,12 @@ namespace costmap_converter
 class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
 {
   public:
-    
+    HungarianAlgorithm HungAlgo;
+    TrackerContainerPtr trackers_;
+    struct redefObs
+    {
+      double x,y;
+    };
     /**
      * @struct KeyPoint
      * @brief Defines a keypoint in metric coordinates of the map 
@@ -170,7 +175,7 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
      * @return Shared instance of the current polygon container
      */
     PolygonContainerConstPtr getPolygons();
-
+    TrackerContainerPtr getTrackers();
     
     
   protected:
@@ -320,13 +325,14 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
     //void reconfigureCB(CostmapToPolygonsDBSMCCHConfig& config, uint32_t level);
     
     
+    
     PolygonContainerPtr polygons_; //!< Current shared container of polygons
     std::mutex mutex_; //!< Mutex that keeps track about the ownership of the shared polygon instance
     
     //dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>* dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
    
     nav2_costmap_2d::Costmap2D *costmap_; //!< Pointer to the costmap2d
-   
+    
 }; 
 
   

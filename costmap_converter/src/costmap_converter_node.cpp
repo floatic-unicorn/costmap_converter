@@ -43,7 +43,7 @@
 #include <nav2_costmap_2d/costmap_2d.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <visualization_msgs/msg/marker.hpp>
-
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <costmap_converter/costmap_converter_interface.h>
 #include <pluginlib/class_loader.hpp>
 
@@ -68,7 +68,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     // load converter plugin from parameter server, otherwise set default
 
     std::string converter_plugin =
-        "costmap_converter::CostmapToPolygonsDBSMCCH";
+        "costmap_converter::CostmapToLinesDBSMCCH";
 
     declare_parameter("converter_plugin",
                       rclcpp::ParameterValue(converter_plugin));
@@ -100,12 +100,18 @@ class CostmapStandaloneConversion : public rclcpp::Node {
                       rclcpp::ParameterValue(polygon_marker_topic));
     get_parameter_or<std::string>("polygon_marker_topic", polygon_marker_topic,
                                   polygon_marker_topic);
-
+    std::string tracker_marker_topic = "trackers_marker";
+    declare_parameter("tracker_marker_topic",
+                      rclcpp::ParameterValue(tracker_marker_topic));
+    get_parameter_or<std::string>("tracker_marker_topic", tracker_marker_topic,
+                                  tracker_marker_topic);
     obstacle_pub_ =
         create_publisher<costmap_converter_msgs::msg::ObstacleArrayMsg>(
             obstacles_topic, 1000);
     marker_pub_ = create_publisher<visualization_msgs::msg::Marker>(
         polygon_marker_topic, 10);
+    markerArray_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+        tracker_marker_topic, 10);
 
     occupied_min_value_ = 100;
     declare_parameter("occupied_min_value",
@@ -137,7 +143,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
   void publishCallback() {
     costmap_converter::ObstacleArrayConstPtr obstacles =
         converter_->getObstacles();
-
+    
     if (!obstacles) return;
 
     obstacle_pub_->publish(*obstacles);
@@ -145,6 +151,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     frame_id_ = costmap_ros_->getGlobalFrameID();
 
     publishAsMarker(frame_id_, *obstacles);
+    //publishAsNumber(frame_id_);
   }
 
   void publishAsMarker(
@@ -239,7 +246,31 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     }
     marker_pub_->publish(line_list);
   }
-
+  void publishAsNumber(
+      const std::string &frame_id) {
+    visualization_msgs::msg::MarkerArray nodeArray;
+    //RCLCPP_INFO(get_logger(),"1");
+    costmap_converter::TrackerContainerPtr pubTrackers = converter_->getTracker();
+    //RCLCPP_INFO(get_logger(),"2");
+    for(int i = 0; i<pubTrackers->size(); i++)
+    {
+      pair<double, double> state = (*pubTrackers)[i].getState(0);
+      visualization_msgs::msg::Marker nodeName;
+      nodeName.header.frame_id = frame_id;
+      nodeName.header.stamp = now();
+      nodeName.text = std::to_string((*pubTrackers)[i].id);
+      nodeName.color.a = 1.0;
+      nodeName.scale.z = 0.2;
+      nodeName.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      nodeName.id = i;
+      nodeName.action = visualization_msgs::msg::Marker::ADD;
+      nodeName.pose.orientation.w = 1.0;
+      nodeName.pose.position.x =  state.first; //노드의 x 좌표
+      nodeName.pose.position.y =  state.second; //노드의 y 좌표
+      nodeArray.markers.push_back(nodeName);
+    }    
+    markerArray_pub_->publish(nodeArray);
+  }
  private:
   pluginlib::ClassLoader<costmap_converter::BaseCostmapToPolygons>
       converter_loader_;
@@ -251,6 +282,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
   rclcpp::Publisher<costmap_converter_msgs::msg::ObstacleArrayMsg>::SharedPtr
       obstacle_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr markerArray_pub_;
   rclcpp::TimerBase::SharedPtr pub_timer_;
 
   std::string frame_id_;

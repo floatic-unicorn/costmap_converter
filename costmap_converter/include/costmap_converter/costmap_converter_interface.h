@@ -49,7 +49,8 @@
 #include <nav2_costmap_2d/costmap_2d_ros.hpp>
 #include <geometry_msgs/msg/polygon.hpp>
 #include <costmap_converter_msgs/msg/obstacle_array_msg.hpp>
-
+#include <costmap_converter/KalmanEigen.h>
+#include <costmap_converter/Hungarian.h>
 namespace costmap_converter
 {
   
@@ -60,7 +61,9 @@ typedef costmap_converter_msgs::msg::ObstacleArrayMsg::ConstSharedPtr ObstacleAr
 
 //! Typedef for a shared polygon container 
 typedef std::shared_ptr<std::vector<geometry_msgs::msg::Polygon>> PolygonContainerPtr;
+typedef std::shared_ptr<std::vector<KalmanEigen>> TrackerContainerPtr;
 //! Typedef for a shared polygon container (read-only access)
+typedef std::shared_ptr<const std::vector<KalmanEigen>> TrackerContainerConstPtr;
 typedef std::shared_ptr<const std::vector<geometry_msgs::msg::Polygon>> PolygonContainerConstPtr;
   
 template <typename NodeT, typename ParamType>
@@ -90,7 +93,7 @@ ParamType declareAndGetParam(const NodeT & node, const std::string & param_name,
 class BaseCostmapToPolygons
 {
 public: 
-  
+    
     /**
      * @brief Initialize the plugin
      * @param nh Nodehandle that defines the namespace for parameters
@@ -138,6 +141,8 @@ public:
      * @return Shared instance of the current polygon container
      */
     virtual PolygonContainerConstPtr getPolygons(){return PolygonContainerConstPtr();}
+    virtual TrackerContainerPtr getTrackers(){return TrackerContainerPtr();
+      }
 
   /**
    * @brief Get a shared instance of the current obstacle container
@@ -161,7 +166,10 @@ public:
       }
       return obstacles;
     }
-
+    virtual TrackerContainerPtr getTracker(){
+      TrackerContainerPtr trackers = getTrackers();
+      return trackers;
+    }
     /**
      * @brief Set name of robot's odometry topic
      *
@@ -269,12 +277,12 @@ protected:
      */
     void workerCallback()
     {
-      RCLCPP_INFO(nh_->get_logger(), "start compute..");
+      //RCLCPP_INFO(nh_->get_logger(), "1.start compute..");
       auto now = nh_->now();
       updateCostmap2D();
       compute();
       auto ex_time = nh_->now() - now;
-      RCLCPP_INFO(nh_->get_logger(), "converting time : %f", ex_time.seconds());
+      //RCLCPP_INFO(nh_->get_logger(), "2.converting time : %f", ex_time.seconds());
     }
 
     rclcpp::Logger getLogger() const
