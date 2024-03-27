@@ -25,6 +25,7 @@ find_package(OpenCV REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED)
 set(dependencies
     class_loader
     costmap_converter_msgs
@@ -45,15 +46,6 @@ include_directories(
 
 add_library(costmap_converter SHARED
   src/costmap_to_polygons.cpp 
-  src/costmap_to_polygons_concave.cpp
-  src/costmap_to_lines_convex_hull.cpp
-  src/costmap_to_lines_ransac.cpp
-  src/costmap_to_dynamic_obstacles/costmap_to_dynamic_obstacles.cpp
-  src/costmap_to_dynamic_obstacles/background_subtractor.cpp
-  src/costmap_to_dynamic_obstacles/blob_detector.cpp
-  src/costmap_to_dynamic_obstacles/multitarget_tracker/Ctracker.cpp
-  src/costmap_to_dynamic_obstacles/multitarget_tracker/Kalman.cpp
-  src/costmap_to_dynamic_obstacles/multitarget_tracker/HungarianAlg.cpp
   src/KalmanEigen.cpp
   src/Hungarian.cpp
 )

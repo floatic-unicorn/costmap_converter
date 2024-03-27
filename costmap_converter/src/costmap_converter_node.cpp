@@ -47,28 +47,29 @@
 #include <costmap_converter/costmap_converter_interface.h>
 #include <pluginlib/class_loader.hpp>
 
+
 class CostmapStandaloneConversion : public rclcpp::Node {
  public:
   CostmapStandaloneConversion(const std::string node_name)
       : rclcpp::Node(node_name),
         converter_loader_("costmap_converter",
                           "costmap_converter::BaseCostmapToPolygons") {
-    costmap_ros_ =
+    costmap_converter::costmap_ros_ =
         std::make_shared<nav2_costmap_2d::Costmap2DROS>("converter_costmap");
     costmap_thread_ = std::make_unique<std::thread>(
         [](rclcpp_lifecycle::LifecycleNode::SharedPtr node) {
           rclcpp::spin(node->get_node_base_interface());
         },
-        costmap_ros_);
+        costmap_converter::costmap_ros_);
     rclcpp_lifecycle::State state;
-    costmap_ros_->on_configure(state);
-    costmap_ros_->on_activate(state);
+    costmap_converter::costmap_ros_->on_configure(state);
+    costmap_converter::costmap_ros_->on_activate(state);
 
     n_ = std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node *) {});
     // load converter plugin from parameter server, otherwise set default
 
     std::string converter_plugin =
-        "costmap_converter::CostmapToLinesDBSMCCH";
+        "costmap_converter::CostmapToPolygonsDBSMCCH";
 
     declare_parameter("converter_plugin",
                       rclcpp::ParameterValue(converter_plugin));
@@ -89,7 +90,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     RCLCPP_INFO(get_logger(), "Standalone costmap converter: %s loaded.",
                 converter_plugin.c_str());
 
-    std::string obstacles_topic = "costmap_obstacles";
+    std::string obstacles_topic = "dynamic_obstacle";
     declare_parameter("obstacles_topic",
                       rclcpp::ParameterValue(obstacles_topic));
     get_parameter_or<std::string>("obstacles_topic", obstacles_topic,
@@ -107,12 +108,14 @@ class CostmapStandaloneConversion : public rclcpp::Node {
                                   tracker_marker_topic);
     obstacle_pub_ =
         create_publisher<costmap_converter_msgs::msg::ObstacleArrayMsg>(
-            obstacles_topic, 1000);
+            obstacles_topic, 10);
     marker_pub_ = create_publisher<visualization_msgs::msg::Marker>(
         polygon_marker_topic, 10);
     markerArray_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
         tracker_marker_topic, 10);
-
+    
+    // std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
+    // rclcpp_lifecycle::LifecycleNode>> laser_scan_sub_;
     occupied_min_value_ = 100;
     declare_parameter("occupied_min_value",
                       rclcpp::ParameterValue(occupied_min_value_));
@@ -131,9 +134,14 @@ class CostmapStandaloneConversion : public rclcpp::Node {
       converter_->setOdomTopic(odom_topic);
       converter_->initialize(
           std::make_shared<rclcpp::Node>("intra_node", "costmap_converter"));
+      
+      rclcpp_lifecycle::State state;
+      //costmap_converter::costmap_ros->on_configure(state);
+      //costmap_converter::costmap_ros->on_activate(state);costmap_converter::costmap_ros_
       converter_->startWorker(std::make_shared<rclcpp::Rate>(rate),
-                              costmap_ros_->getCostmap(), true);
+                              costmap_converter::costmap_ros_->getCostmap(), true);
     }
+    
 
     pub_timer_ = n_->create_wall_timer(
         std::chrono::milliseconds(200),
@@ -145,107 +153,109 @@ class CostmapStandaloneConversion : public rclcpp::Node {
         converter_->getObstacles();
     
     if (!obstacles) return;
-
+    frame_id_ = costmap_converter::costmap_ros_->getGlobalFrameID();
+    //obstacles.header.frame_id = frame_id_;
+    //obstacles.header.stamp = now();
     obstacle_pub_->publish(*obstacles);
 
-    frame_id_ = costmap_ros_->getGlobalFrameID();
+    
 
-    publishAsMarker(frame_id_, *obstacles);
-    //publishAsNumber(frame_id_);
+    //publishAsMarker(frame_id_, *obstacles);
+    publishAsNumber(frame_id_);
   }
 
-  void publishAsMarker(
-      const std::string &frame_id,
-      const std::vector<geometry_msgs::msg::PolygonStamped> &polygonStamped) {
-    visualization_msgs::msg::Marker line_list;
-    line_list.header.frame_id = frame_id;
-    line_list.header.stamp = now();
-    line_list.ns = "Polygons";
-    line_list.action = visualization_msgs::msg::Marker::ADD;
-    line_list.pose.orientation.w = 1.0;
+  // void publishAsMarker(
+  //     const std::string &frame_id,
+  //     const std::vector<geometry_msgs::msg::PolygonStamped> &polygonStamped) {
+  //   visualization_msgs::msg::Marker line_list;
+  //   line_list.header.frame_id = frame_id;
+  //   line_list.header.stamp = now();
+  //   line_list.ns = "Polygons";
+  //   line_list.action = visualization_msgs::msg::Marker::ADD;
+  //   line_list.pose.orientation.w = 1.0;
 
-    line_list.id = 0;
-    line_list.type = visualization_msgs::msg::Marker::LINE_LIST;
+  //   line_list.id = 0;
+  //   line_list.type = visualization_msgs::msg::Marker::LINE_LIST;
 
-    line_list.scale.x = 0.1;
-    line_list.color.g = 1.0;
-    line_list.color.a = 1.0;
+  //   line_list.scale.x = 0.1;
+  //   line_list.color.g = 1.0;
+  //   line_list.color.a = 1.0;
 
-    for (std::size_t i = 0; i < polygonStamped.size(); ++i) {
-      for (int j = 0; j < (int)polygonStamped[i].polygon.points.size() - 1;
-           ++j) {
-        geometry_msgs::msg::Point line_start;
-        line_start.x = polygonStamped[i].polygon.points[j].x;
-        line_start.y = polygonStamped[i].polygon.points[j].y;
-        line_list.points.push_back(line_start);
-        geometry_msgs::msg::Point line_end;
-        line_end.x = polygonStamped[i].polygon.points[j + 1].x;
-        line_end.y = polygonStamped[i].polygon.points[j + 1].y;
-        line_list.points.push_back(line_end);
-      }
-      // close loop for current polygon
-      if (!polygonStamped[i].polygon.points.empty() &&
-          polygonStamped[i].polygon.points.size() != 2) {
-        geometry_msgs::msg::Point line_start;
-        line_start.x = polygonStamped[i].polygon.points.back().x;
-        line_start.y = polygonStamped[i].polygon.points.back().y;
-        line_list.points.push_back(line_start);
-        if (line_list.points.size() % 2 != 0) {
-          geometry_msgs::msg::Point line_end;
-          line_end.x = polygonStamped[i].polygon.points.front().x;
-          line_end.y = polygonStamped[i].polygon.points.front().y;
-          line_list.points.push_back(line_end);
-        }
-      }
-    }
-    marker_pub_->publish(line_list);
-  }
+  //   for (std::size_t i = 0; i < polygonStamped.size(); ++i) {
+  //     for (int j = 0; j < (int)polygonStamped[i].polygon.points.size() - 1;
+  //          ++j) {
+  //       geometry_msgs::msg::Point line_start;
+  //       line_start.x = polygonStamped[i].polygon.points[j].x;
+  //       line_start.y = polygonStamped[i].polygon.points[j].y;
+  //       line_list.points.push_back(line_start);
+  //       geometry_msgs::msg::Point line_end;
+  //       line_end.x = polygonStamped[i].polygon.points[j + 1].x;
+  //       line_end.y = polygonStamped[i].polygon.points[j + 1].y;
+  //       line_list.points.push_back(line_end);
+  //     }
+  //     // close loop for current polygon
+  //     if (!polygonStamped[i].polygon.points.empty() &&
+  //         polygonStamped[i].polygon.points.size() != 2) {
+  //       geometry_msgs::msg::Point line_start;
+  //       line_start.x = polygonStamped[i].polygon.points.back().x;
+  //       line_start.y = polygonStamped[i].polygon.points.back().y;
+  //       line_list.points.push_back(line_start);
+  //       if (line_list.points.size() % 2 != 0) {
+  //         geometry_msgs::msg::Point line_end;
+  //         line_end.x = polygonStamped[i].polygon.points.front().x;
+  //         line_end.y = polygonStamped[i].polygon.points.front().y;
+  //         line_list.points.push_back(line_end);
+  //       }
+  //     }
+  //   }
+  //   marker_pub_->publish(line_list);
+  // }
 
-  void publishAsMarker(
-      const std::string &frame_id,
-      const costmap_converter_msgs::msg::ObstacleArrayMsg &obstacles) {
-    visualization_msgs::msg::Marker line_list;
-    line_list.header.frame_id = frame_id;
-    line_list.header.stamp = now();
-    line_list.ns = "Polygons";
-    line_list.action = visualization_msgs::msg::Marker::ADD;
-    line_list.pose.orientation.w = 1.0;
+  // void publishAsMarker(
+  //     const std::string &frame_id,
+  //     const costmap_converter_msgs::msg::ObstacleArrayMsg &obstacles) {
+  //   visualization_msgs::msg::Marker line_list;
+  //   line_list.header.frame_id = frame_id;
+  //   line_list.header.stamp = now();
+  //   line_list.ns = "Polygons";
+  //   line_list.action = visualization_msgs::msg::Marker::ADD;
+  //   line_list.pose.orientation.w = 1.0;
 
-    line_list.id = 0;
-    line_list.type = visualization_msgs::msg::Marker::LINE_LIST;
+  //   line_list.id = 0;
+  //   line_list.type = visualization_msgs::msg::Marker::LINE_LIST;
 
-    line_list.scale.x = 0.1;
-    line_list.color.g = 1.0;
-    line_list.color.a = 1.0;
+  //   line_list.scale.x = 0.1;
+  //   line_list.color.g = 1.0;
+  //   line_list.color.a = 1.0;
 
-    for (const auto &obstacle : obstacles.obstacles) {
-      for (int j = 0; j < (int)obstacle.polygon.points.size() - 1; ++j) {
-        geometry_msgs::msg::Point line_start;
-        line_start.x = obstacle.polygon.points[j].x;
-        line_start.y = obstacle.polygon.points[j].y;
-        line_list.points.push_back(line_start);
-        geometry_msgs::msg::Point line_end;
-        line_end.x = obstacle.polygon.points[j + 1].x;
-        line_end.y = obstacle.polygon.points[j + 1].y;
-        line_list.points.push_back(line_end);
-      }
-      // close loop for current polygon
-      if (!obstacle.polygon.points.empty() &&
-          obstacle.polygon.points.size() != 2) {
-        geometry_msgs::msg::Point line_start;
-        line_start.x = obstacle.polygon.points.back().x;
-        line_start.y = obstacle.polygon.points.back().y;
-        line_list.points.push_back(line_start);
-        if (line_list.points.size() % 2 != 0) {
-          geometry_msgs::msg::Point line_end;
-          line_end.x = obstacle.polygon.points.front().x;
-          line_end.y = obstacle.polygon.points.front().y;
-          line_list.points.push_back(line_end);
-        }
-      }
-    }
-    marker_pub_->publish(line_list);
-  }
+  //   for (const auto &obstacle : obstacles.obstacles) {
+  //     for (int j = 0; j < (int)obstacle.polygon.points.size() - 1; ++j) {
+  //       geometry_msgs::msg::Point line_start;
+  //       line_start.x = obstacle.polygon.points[j].x;
+  //       line_start.y = obstacle.polygon.points[j].y;
+  //       line_list.points.push_back(line_start);
+  //       geometry_msgs::msg::Point line_end;
+  //       line_end.x = obstacle.polygon.points[j + 1].x;
+  //       line_end.y = obstacle.polygon.points[j + 1].y;
+  //       line_list.points.push_back(line_end);
+  //     }
+  //     // close loop for current polygon
+  //     if (!obstacle.polygon.points.empty() &&
+  //         obstacle.polygon.points.size() != 2) {
+  //       geometry_msgs::msg::Point line_start;
+  //       line_start.x = obstacle.polygon.points.back().x;
+  //       line_start.y = obstacle.polygon.points.back().y;
+  //       line_list.points.push_back(line_start);
+  //       if (line_list.points.size() % 2 != 0) {
+  //         geometry_msgs::msg::Point line_end;
+  //         line_end.x = obstacle.polygon.points.front().x;
+  //         line_end.y = obstacle.polygon.points.front().y;
+  //         line_list.points.push_back(line_end);
+  //       }
+  //     }
+  //   }
+  //   marker_pub_->publish(line_list);
+  // }
   void publishAsNumber(
       const std::string &frame_id) {
     visualization_msgs::msg::MarkerArray nodeArray;
@@ -266,7 +276,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
       nodeName.action = visualization_msgs::msg::Marker::ADD;
       nodeName.pose.orientation.w = 1.0;
       nodeName.pose.position.x =  state.first; //노드의 x 좌표
-      nodeName.pose.position.y =  state.second; //노드의 y 좌표
+      nodeName.pose.position.y =  state.second; //노드의 y 좌표s
       nodeArray.markers.push_back(nodeName);
     }    
     markerArray_pub_->publish(nodeArray);
@@ -277,7 +287,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
   std::shared_ptr<costmap_converter::BaseCostmapToPolygons> converter_;
 
   rclcpp::Node::SharedPtr n_;
-  std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
+  
   std::unique_ptr<std::thread> costmap_thread_;
   rclcpp::Publisher<costmap_converter_msgs::msg::ObstacleArrayMsg>::SharedPtr
       obstacle_pub_;

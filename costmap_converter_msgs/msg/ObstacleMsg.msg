@@ -4,21 +4,21 @@
 # Polygon with more than 2 vertices: First and last points are assumed to be connected
 
 std_msgs/Header header
-
+int64 id
 # Obstacle footprint (polygon descriptions)
 geometry_msgs/Polygon polygon
 
 # Specify the radius for circular/point obstacles
-float64 radius
+#float64 radius
 
 # Obstacle ID
 # Specify IDs in order to provide (temporal) relationships
 # between obstacles among multiple messages.
-int64 id
 
-# Individual orientation (centroid)
-geometry_msgs/Quaternion orientation
 
-# Individual velocities (centroid)
-geometry_msgs/TwistWithCovariance velocities
+# Individual position (centroid)
+geometry_msgs/Point position
+
+# Individual velocity
+geometry_msgs/Vector3 velocity
 

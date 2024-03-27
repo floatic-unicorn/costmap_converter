@@ -38,8 +38,12 @@
 
 #include <costmap_converter/costmap_to_polygons.h>
 #include <costmap_converter/misc.h>
+#include <costmap_converter/utills.hpp>
 #include <pluginlib/class_list_macros.hpp>
-#include <costmap_converter/costmap_to_dynamic_obstacles/costmap_to_dynamic_obstacles.h>
+#include <opencv2/opencv.hpp>
+#include <algorithm>
+#include <boost/math/distributions/skew_normal.hpp>
+#include <random>
 PLUGINLIB_EXPORT_CLASS(costmap_converter::CostmapToPolygonsDBSMCCH, costmap_converter::BaseCostmapToPolygons)
 
 namespace
@@ -103,6 +107,9 @@ std::vector<geometry_msgs::msg::Point32> douglasPeucker(std::vector<geometry_msg
 namespace costmap_converter
 {
 
+
+//std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros;
+
 CostmapToPolygonsDBSMCCH::CostmapToPolygonsDBSMCCH() : BaseCostmapToPolygons()
 {
   costmap_ = NULL;
@@ -129,14 +136,17 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
   parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
   RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
   
-  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 30);
+  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 80);
   RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
   
   parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
   RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
 
   parameter_buffered_ = parameter_;
-  
+  //costmap_ros = std::make_shared<nav2_costmap_2d::Costmap2DROS>("converter_costmap");
+  //rclcpp_lifecycle::State state;
+  //costmap_ros->on_configure(state);
+  //costmap_ros->on_activate(state);
 // setup dynamic reconfigure
 //    dynamic_recfg_ = new dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>(nh);
 //    dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>::CallbackType cb = boost::bind(&CostmapToPolygonsDBSMCCH::reconfigureCB, this, _1, _2);
@@ -153,18 +163,27 @@ void CostmapToPolygonsDBSMCCH::compute()
       RCLCPP_INFO(getLogger(), " update costmap ");
       updateCostmap2D();
     }
-
+    //updateCostmap2D();
+    //RCLCPP_INFO(getLogger(), "1");
     std::vector< std::vector<KeyPoint> > clusters;
+    
     dbScan(clusters);
+    
+    //RCLCPP_INFO(getLogger(), "2");
     static int obsCount = 0;
-    TrackerContainerPtr currentFrameTrackers(new std::vector<KalmanEigen>());
+    //TrackerContainerPtr currentFrameTrackers = std::make_shared<std::vector<KalmanEigen>>();
+    std::vector<KalmanEigen> currentFrameTrackers;
     vector<redefObs> redefinedObstacles;
     vector<redefObs> assignedObstacles;
     vector<vector<double>> distanceMatrix;
     vector<int> assignment;
     // Create new polygon container
+    
+    //RCLCPP_INFO(getLogger(), "3");
     PolygonContainerPtr polygons(new std::vector<geometry_msgs::msg::Polygon>());
-
+    std::vector<geometry_msgs::msg::Polygon> cluster2;
+    
+    //RCLCPP_INFO(getLogger(), "4");
 
     // add convex hulls to polygon container
     for (std::size_t i = 1; i <clusters.size(); ++i) // skip first cluster, since it is just noise
@@ -174,109 +193,106 @@ void CostmapToPolygonsDBSMCCH::compute()
     }
 
     // add our non-cluster points to the polygon container (as single points)
-    if (!clusters.empty())
-    {
-      for (std::size_t i=0; i < clusters.front().size(); ++i)
-      {
-        polygons->push_back( geometry_msgs::msg::Polygon() );
-        convertPointToPolygon(clusters.front()[i], polygons->back());
-      }
-    }
+    // if (!clusters.empty())
+    // {
+    //   for (std::size_t i=0; i < clusters.front().size(); ++i)
+    //   {
+    //     polygons->push_back( geometry_msgs::msg::Polygon() );
+    //     convertPointToPolygon(clusters.front()[i], polygons->back());
+    //   }
+    // }
+    
     //polygons -> currentFrameDetectionObstacles
     pair<double,double> obstaclePosition;
     pair<double,double> obstacleVelocity;
     
-    int historyThreshold = 1;
+    unsigned int historyThreshold = 1;
     int obstaclesSize = polygons->size();
+    int trackerSize = trackers_->size();
     //RCLCPP_INFO(getLogger(), "tracking start ");
-    if(trackers_==nullptr)
-    {
-      RCLCPP_INFO(getLogger(), "Empty Tracker..");
-        
-      for(int i=0; i< obstaclesSize; i++)
-      {
-        double pSumX = 0;
-        double pSumY = 0;
-        size_t len = (*polygons)[i].points.size();
 
-        for(int j=0; j<len; j++)
-        {
-  
-          pSumX += (*polygons)[i].points[j].x;
-          pSumY += (*polygons)[i].points[j].y;
-        }
-        double pMeanX = pSumX/len;
-        double pMeanY = pSumY/len;
-        obstaclePosition = make_pair(pMeanX,pMeanY);
-        obsCount++;
-        KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount);
-        currentFrameTrackers->push_back(tracker);
-        trackers_ = currentFrameTrackers;
+    //////////////////////////////////////////////////////////////////////
+    ////////////////////////Redefined Obstacle////////////////////////////
+    for(int i=0; i< obstaclesSize; i++)
+    {
+      double pSumX = 0;
+      double pSumY = 0;
+      size_t len = (*polygons)[i].points.size();
+      //RCLCPP_INFO(getLogger(), "clusters size %d points %d",clusters.size(),clusters[i].size());
+      for(int j=0; j<len; j++)
+      {     
+        pSumX += (*polygons)[i].points[j].x;
+        pSumY += (*polygons)[i].points[j].y;
+        //RCLCPP_INFO(getLogger(), "polygon(%d) %.2f %.2f",i,(*polygons)[i].points[j].x,(*polygons)[i].points[j].y);
       }
-      RCLCPP_INFO(getLogger(), "Input %d obstacle to trackers",currentFrameTrackers->size());
+      geometry_msgs::msg::Polygon cluster; 
+      for(int j=0; j<clusters[i+1].size(); j++)
+      {
+        cluster.points.push_back(geometry_msgs::msg::Point32());
+        cluster.points.back().x = clusters[i+1][j].x;
+        cluster.points.back().y = clusters[i+1][j].y;
+        //RCLCPP_INFO(getLogger(), "cluster(%d) %.2f %.2f",i,cluster.points.back().x,cluster.points.back().y);
+      }
+      RCLCPP_INFO(getLogger(), "cluster size %d",cluster.points.size());
+      cluster2.push_back(cluster);
+      
+      
+      //double pMeanX = pSumX/len;
+      //double pMeanY = pSumY/len;
+      redefObs obs = {pSumX/len, pSumY/len, i};
+      redefinedObstacles.push_back(obs);
     }
-    else
+    
+    
+    if(!trackerSize && obstaclesSize)
     {
-      int trackerSize = trackers_->size();
-      //////////////////////////////////////////////////////////////////////
-      ////////////////////////Redefined Obstacle////////////////////////////
-      for(int i=0; i< obstaclesSize; i++)
+      RCLCPP_INFO(getLogger(), "Num of Tracking Objects = %d",trackerSize);
+      for(auto obs1 : redefinedObstacles)
       {
-        double pSumX = 0;
-        double pSumY = 0;
-        size_t len = (*polygons)[i].points.size();
-        //RCLCPP_INFO(getLogger(), "Polygon %dth PointNum %d",i,len);
-        for(int j=0; j<len; j++)
-        {
-          
-          pSumX += (*polygons)[i].points[j].x;
-          pSumY += (*polygons)[i].points[j].y;
-        }
-        double pMeanX = pSumX/len;
-        double pMeanY = pSumY/len;
-        redefObs obs = {pMeanX, pMeanY};
-        redefinedObstacles.push_back(obs);
+        obstaclePosition = make_pair(obs1.x,obs1.y);
+        obsCount++;
+        KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount,obs1.id,cluster2[obs1.id]);
+        trackers_->push_back(tracker);
+        //RCLCPP_INFO(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
       }
-
+      if(trackerSize > 0)
+        RCLCPP_INFO(getLogger(), "Input %d obstacle to trackers",trackerSize);
+    }
+    else if(trackerSize && obstaclesSize)
+    {
       //////////////////////////////////////////////////////////////////////
       ////////////////////////DistanceMatrix Initialize/////////////////////
-      distanceMatrix.clear();
-      distanceMatrix.resize(trackerSize,vector<double>(obstaclesSize,0));
-      for(int i = 0; i<trackerSize; i++)
-      {
-        (*trackers_)[i].predict();
-      }
-      for (int i=0; i<redefinedObstacles.size(); i++)
-      {
-        double pMeanX = redefinedObstacles[i].x;
-        double pMeanY = redefinedObstacles[i].y;
-        RCLCPP_INFO(getLogger(),"Obstacle pos(%.2f,%.2f)",pMeanX,pMeanY);  
-        //RCLCPP_INFO(getLogger(),"Shape %d, %d".distanceMatrix,distanceMatrix[0].size());
-        for(int j = 0; j < trackers_->size(); j++)
+        for(int i = 0; i<trackerSize; i++)
         {
-          pair<double, double> trackerState = (*trackers_)[j].getState(0);
-          distanceMatrix[j][i] = sqrt((pMeanX-trackerState.first) * (pMeanX-trackerState.first) + (pMeanY-trackerState.second) * (pMeanY-trackerState.second)); 
-          //RCLCPP_INFO(getLogger(),"trk %d, obs %d distance %f trkpos %f %f obspos %f %f",j,i,distanceMatrix[j][i],trackerState.first,trackerState.second,pMeanX,pMeanY);
+          (*trackers_)[i].predict();
         }
-      }
+      //if(redefinedObstacles.size())
+      //{
+        distanceMatrix.clear();
+        distanceMatrix.resize(trackerSize,vector<double>(obstaclesSize,0));
+        //distanceMatrix.resize(obstaclesSize,vector<double>(trackerSize,0));
+        for (int i=0; i<redefinedObstacles.size(); i++)
+        {
+          double pMeanX = redefinedObstacles[i].x;
+          double pMeanY = redefinedObstacles[i].y;
+          //RCLCPP_INFO(getLogger(),"Obstacle pos(%.2f,%.2f)",pMeanX,pMeanY);  
+          //RCLCPP_INFO(getLogger(),"Shape %d, %d".distanceMatrix,distanceMatrix[0].size());
+          for(int j = 0; j < trackerSize; j++)
+          {
+            pair<double, double> trackerState = (*trackers_)[j].getState(0);
+            distanceMatrix[j][i] = sqrt((pMeanX-trackerState.first) * (pMeanX-trackerState.first) + (pMeanY-trackerState.second) * (pMeanY-trackerState.second)); 
+            //RCLCPP_INFO(getLogger(),"trk %d, obs %d distance %f trkpos %f %f obspos %f %f",j,i,distanceMatrix[j][i],trackerState.first,trackerState.second,pMeanX,pMeanY);
+          }
+        }
       /////////////////////////////////////////////////////////////////////
       ///////////////////////Matching//////////////////////////////////////
-      HungAlgo.Solve(distanceMatrix, assignment);
-      // for(int i = trackers_->size()-1; i>-1; i--)
-      // {
-      //   RCLCPP_INFO(getLogger(),"Size %d id %d Assign %d -> %d :: distance %f",trackers_->size(),(*trackers_)[i].id, i,assignment[i], distanceMatrix[i][assignment[i]]);  
-      // }
-      for(int i = 0; i<redefinedObstacles.size(); i++)
-      {
-       
-      }
-      if(redefinedObstacles.size())
-      {
+        HungAlgo.Solve(distanceMatrix, assignment);
         for(int i = trackers_->size()-1; i>-1; i--)
         {
           if(assignment[i] == -1)
           {
             (*trackers_)[i].unmatchedHistory++;
+            (*trackers_)[i].matchedHistory = 0;
             if((*trackers_)[i].unmatchedHistory > historyThreshold)
             {
               RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
@@ -285,28 +301,32 @@ void CostmapToPolygonsDBSMCCH::compute()
           }
           else
           {
+            //RCLCPP_INFO(getLogger(), "9");
             if(distanceMatrix[i][assignment[i]] < 0.5 && assignment[i] != -1)
             {
+              
               assignedObstacles.push_back(redefinedObstacles[assignment[i]]);
               (*trackers_)[i].update(make_pair(redefinedObstacles[assignment[i]].x,redefinedObstacles[assignment[i]].y));
+              (*trackers_)[i].obstacleId = redefinedObstacles[assignment[i]].id;
+              (*trackers_)[i].pointList = cluster2[assignment[i]];
               obstaclePosition = (*trackers_)[i].getState(0);
               obstacleVelocity = (*trackers_)[i].getState(1);
-              double velocity = sqrt(obstacleVelocity.first*obstacleVelocity.first+obstacleVelocity.second*obstacleVelocity.second);
+              //double velocity = sqrt(obstacleVelocity.first*obstacleVelocity.first+obstacleVelocity.second*obstacleVelocity.second);
               //if(velocity > 0.5)
               //RCLCPP_INFO(getLogger()," Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]);
               //RCLCPP_INFO(getLogger()," trk %d of %d UnmatchHistory %d, obs %d, distance %lf",(*trackers_)[i].id, trackers_->size(), (*trackers_)[i].unmatchedHistory, assignment[i], distanceMatrix[i][assignment[i]]);
               //if(velocity >0.1)
-              RCLCPP_INFO(getLogger(),"Tracker id:%d pos(%.2f,%.2f) vel %f",(*trackers_)[i].id,obstaclePosition.first,obstaclePosition.second,velocity);
+              RCLCPP_INFO(getLogger(),"(%d)Tracker pos(%.2f,%.2f) vel(%.2f,%.2f)",(*trackers_)[i].id,obstaclePosition.first,obstaclePosition.second,obstacleVelocity.first,obstacleVelocity.second);
               //redefinedObstacles.erase(redefinedObstacles.begin()+assignment[i]);
               //RCLCPP_INFO(getLogger(),"Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]); 
             }
             else
             {
+              (*trackers_)[i].matchedHistory = 0;
               (*trackers_)[i].unmatchedHistory++;
               if((*trackers_)[i].unmatchedHistory > historyThreshold)
               {
                 RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
-              
                 trackers_->erase(trackers_->begin() + i);
               }
             }
@@ -324,60 +344,269 @@ void CostmapToPolygonsDBSMCCH::compute()
           {
             obstaclePosition = make_pair(obs1.x,obs1.y);
             obsCount++;
-            KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount);
+            KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount,obs1.id,cluster2[obs1.id]);
             trackers_->push_back(tracker);
             RCLCPP_INFO(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
           }
         }
-        // for(int i =0; i<assignment.size(); i++)
-        // {
-        //     if(distanceMatrix[i][assignment[i]]> 0.0000000 && distanceMatrix[i][assignment[i]] < 1.0)
-        //     {
-        //       currentFrameTrackers = trackers_;
-        //       (*currentFrameTrackers)[i].predict(0.05);
-        //       (*currentFrameTrackers)[i].update(make_pair(redefinedObstacles[assignment[i]].x,redefinedObstacles[assignment[i]].y));
-        //       RCLCPP_INFO(getLogger(),"Assign %d to %d, Distance %f",i,assignment[i],distanceMatrix[i][assignment[i]]);
-        //       trackers_ = currentFrameTrackers;
-        //     }
-            
-        //     if(assignment[i] == -1)
-        //     {
-        //       (*trackers_).erase((*trackers_).begin()+i);
-        //     }
-            
-        // }
-      }
-      else  
-      {
-        for(int i = trackers_->size()-1; i>-1; i--)
+    }
+    else if(trackerSize && !obstaclesSize)
+    {
+      for(int i = trackers_->size()-1; i>-1; i--)
         {
-          RCLCPP_INFO(getLogger(),"noObstacles::");
           (*trackers_)[i].unmatchedHistory++;
-            if((*trackers_)[i].unmatchedHistory > historyThreshold){
-              RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
-              trackers_->erase(trackers_->begin() + i);
-              }
+          (*trackers_)[i].matchedHistory = 0;
+          if((*trackers_)[i].unmatchedHistory > historyThreshold)
+          {
+            RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
+            trackers_->erase(trackers_->begin() + i);
+          }
         }
-      }
-      for(int i = 0; i<trackers_->size(); i++)
-      {
-        (*trackers_)[i].predict();
-      }
+
     }
     
+    // for(int i = 0; i<trackerSize; i++)
+    // {
+    //   (*trackers_)[i].predict();
+    // }
+    /////////////////////////////////////////////
+    //////////To Filter unknown static obstacle//
+    /////////////////////////////////////////////
+    int mapSizeX = costmap_->getSizeInCellsX();
+    int mapSizeY = costmap_->getSizeInCellsY();
+    cv::Mat mapOfDynamicObstacle = cv::Mat::zeros(mapSizeX, mapSizeY, CV_8UC1);
+    //RCLCPP_INFO(getLogger(),"Costmap Size (%d,%d)",costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY());
+    vector<int> obstacleId;
+    vector<double> sampleList;
+    trackerSize = trackers_->size();
+    // for(int i = 0; i<trackers_->size(); i++)
+    // {
+    //   // if(!(*trackers_)[i].matchedHistory)
+    //   //   continue;
+    //   //RCLCPP_INFO(getLogger(), "CheckPoint..");
+    //   obstacleVelocity = (*trackers_)[i].getState(1);
+    //   //RCLCPP_INFO(getLogger(), "CheckPoint..0");
+    //   if(abs(obstacleVelocity.first) < 0.05 && abs(obstacleVelocity.second) < 0.05)
+    //   {
+    //     //Add unknown static obstacle to ErasingObstacleList
+    //     //trackers_->erase(trackers_->begin()+i);
+    //     //obstacleId.push_back((*trackers_)[i].obsid);
+    //   }
+    //   else
+    //   {
+    //     int sampleTime = 500;
+    //     //RCLCPP_INFO(getLogger(), "CheckPoint..1");
+    //     pair<double, double> positionOfDynamicObstacle = (*trackers_)[i].getState(0); //0:get Position 1: get Velocity
+    //     pair<double, double> velocityOfDynamicObstacle = (*trackers_)[i].getState(1);
+    //     //RCLCPP_INFO(getLogger(), "CheckPoint..2");
+    //     double estimatedYaw = 0.0;
+    //     //if(velocityOfDynamicObstacle.first > 0)
+    //     estimatedYaw = atan2(velocityOfDynamicObstacle.second, velocityOfDynamicObstacle.first)-(M_PI/2);
+    //     unsigned int positionMx,positionMy;
+    //     double resolution = 0.01;
+    //     int rayBound = round((1.0)/resolution);
+    //     double velocity = sqrt(velocityOfDynamicObstacle.first*velocityOfDynamicObstacle.first+velocityOfDynamicObstacle.second*velocityOfDynamicObstacle.second);
+    //     //double rightBound = 0.3;
+    //     // double frontBound = sqrt(-log(0.5/rightBound));
+    //     // double rearBound = sqrt(-log(0.5/rightBound));
+    //     //double variableBound = rayBound * resolution;
+    //     //double functionBound = sqrt( -log( rayBound*resolution ) );
+    //     for(int rayStep = 5; rayStep<rayBound; rayStep++)
+    //     {
+    //       double functionBound = sqrt( -3*velocity * log( 2*(rayStep*resolution) ) );
+    //       double rearBound = sqrt( -0.1 * log( 2*(rayStep*resolution) ) );
+    //       int forBound = round(functionBound/resolution);
+    //         for(int y = 0; y < forBound; y++)
+    //         {
+    //           //double rayX = rayStep * resolution * cos(angleStep/180.0*M_PI);
+    //           //double rayY = sqrt( -log( rayX ) );
+    //           unsigned int gridX, gridY; 
+    //           double frontLeftRayX =  rayStep * resolution;
+    //           double frontLeftRayY = y * resolution;
+    //           double frontRightRayX = - rayStep * resolution;
+    //           double frontRightRayY = y * resolution;
+    //           //RCLCPP_INFO(getLogger(), "CheckPoint..3");
+    //           double globalX1 = positionOfDynamicObstacle.first + frontLeftRayX * cos(estimatedYaw) - frontLeftRayY * sin(estimatedYaw);
+    //           double globalY1 = positionOfDynamicObstacle.second + frontLeftRayX * sin(estimatedYaw) + frontLeftRayY * cos(estimatedYaw);
+    //           double globalX2 = positionOfDynamicObstacle.first + frontRightRayX * cos(estimatedYaw) - frontRightRayY * sin(estimatedYaw);
+    //           double globalY2 = positionOfDynamicObstacle.second + frontRightRayX * sin(estimatedYaw) + frontRightRayY * cos(estimatedYaw);
+    //           //RCLCPP_INFO(getLogger(), "CheckPoint..4 p1(%.2f, %.2f) p2(%.2f, %.2f)",globalX1,globalY1,globalX2,globalY2);
+    //           // double globalX1 = positionOfDynamicObstacle.first + frontLeftRayX;
+    //           // double globalY1 = positionOfDynamicObstacle.second + frontLeftRayY;
+    //           // double globalX2 = positionOfDynamicObstacle.first + frontRightRayX;
+    //           // double globalY2 = positionOfDynamicObstacle.second + frontRightRayY;
+    //           if(abs(globalX1) < 2.5 && abs(globalY1) < 2.5)
+    //           {
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if");
+    //             //gridX = (globalX1 * cos (-M_PI/2) + globalY1 * sin(-M_PI/2))/resolution + 49;
+    //             //gridY = (globalX1 * sin (-M_PI/2) - globalY1 * cos(-M_PI/2))/resolution + 49;
+    //             costmap_->worldToMap(globalX1,globalY1,gridX,gridY);
+    //             gridX = - gridX + 100;
+    //             gridY = - gridY + 100;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if0 grid(%d, %d)",gridX,gridY);
+    //             if(gridX < mapSizeX && gridY < mapSizeY && gridX > 0 && gridY > 0)
+    //             {
+    //               mapOfDynamicObstacle.at<uchar>(gridX,gridY) = 254;
+    //             }
+    //           }
+    //           if(abs(globalX2) < 2.5 && abs(globalY2) < 2.5)
+    //           {
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if");
+    //             costmap_->worldToMap(globalX2,globalY2,gridX,gridY);
+    //             //gridX = (globalX2 * cos (-M_PI/2) + globalY2 * sin(-M_PI/2))/resolution + 49;
+    //             //gridY = (globalX2 * sin (-M_PI/2) - globalY2 * cos(-M_PI/2))/resolution + 49;
+    //             gridX = - gridX + 100;
+    //             gridY = - gridY + 100;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if1 grid(%d, %d)",gridX,gridY);
+    //             if(gridX < mapSizeX && gridY < mapSizeY && gridX > 0 && gridY > 0)
+    //             {
+    //               mapOfDynamicObstacle.at<uchar>(gridX,gridY) = 254;
+    //             }
+    //           }
+    //           //RCLCPP_INFO(getLogger(), "CheckPoint..5");
+    //           if(y < round(rearBound/resolution)) 
+    //           {
+    //             double rearLeftRayX =  rayStep * resolution;
+    //             double rearLeftRayY = -y * resolution;
+    //             double rearRightRayX =  -rayStep * resolution;
+    //             double rearRightRayY = -y * resolution;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..6");
+    //             double globalX3 = positionOfDynamicObstacle.first + rearLeftRayX * cos(estimatedYaw) - rearLeftRayY * sin(estimatedYaw);
+    //             double globalY3 = positionOfDynamicObstacle.second + rearLeftRayX * sin(estimatedYaw) + rearLeftRayY * cos(estimatedYaw);
+    //             double globalX4 = positionOfDynamicObstacle.first + rearRightRayX * cos(estimatedYaw) - rearRightRayY * sin(estimatedYaw);
+    //             double globalY4 = positionOfDynamicObstacle.second + rearRightRayX * sin(estimatedYaw) + rearRightRayY * cos(estimatedYaw);
+    //             //double globalX3 = positionOfDynamicObstacle.first + rearLeftRayX;
+    //             //double globalY3 = positionOfDynamicObstacle.second + rearLeftRayY;
+    //             // double globalX4 = positionOfDynamicObstacle.first + rearRightRayX;
+    //             // double globalY4 = positionOfDynamicObstacle.second + rearRightRayY;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..7");
+    //           if(abs(globalX3) < 2.5 && abs(globalY3) < 2.5)
+    //           {
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if");
+    //             costmap_->worldToMap(globalX3,globalY3,gridX,gridY);
+    //             //gridX = (globalX3 * cos (-M_PI/2) + globalY3 * sin(-M_PI/2))/resolution + 49;
+    //             //gridY = (globalX3 * sin (-M_PI/2) - globalY3 * cos(-M_PI/2))/resolution + 49;
+    //             gridX = - gridX + 100;
+    //             gridY = - gridY + 100;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if2 grid(%d, %d)",gridX,gridY);
+    //             if(gridX < mapSizeX && gridY < mapSizeY && gridX > 0 && gridY > 0)
+    //             {
+    //               mapOfDynamicObstacle.at<uchar>(gridX,gridY) = 254;
+    //             }
+    //           }
+    //           if(abs(globalX4) < 2.5 && abs(globalY4) < 2.5)
+    //           {
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if");
+    //             costmap_->worldToMap(globalX4,globalY4,gridX,gridY);
+    //             //gridX = (globalX4 * cos (-M_PI/2) + globalY4 * sin(-M_PI/2))/resolution + 49;
+    //             //gridY = (globalX4 * sin (-M_PI/2) - globalY4 * cos(-M_PI/2))/resolution + 49;
+    //             gridX = - gridX + 100;
+    //             gridY = - gridY + 100;
+    //             //RCLCPP_INFO(getLogger(), "CheckPoint..if6 grid(%d, %d)",gridX,gridY);
+    //             if(gridX < mapSizeX && gridY < mapSizeY && gridX > 0 && gridY > 0)
+    //             {
+    //               mapOfDynamicObstacle.at<uchar>(gridX,gridY) = 254;
+    //             }
+    //           }
+    //           //RCLCPP_INFO(getLogger(), "CheckPoint..8");
+    //           }
+    //           //RCLCPP_INFO(getLogger(), "CheckPoint..9");
+    //         }
+          
+    //     }
+    //     // costmap_->worldToMap(positionOfDynamicObstacle.first,positionOfDynamicObstacle.second,positionMx,positionMy);
+    //     // mapOfDynamicObstacle.at<uchar>(positionMy,positionMx) = 140;
+    //     // std::random_device rd;
+    //     // std::default_random_engine noise_generator;
+        
+    //     // // Sample from a uniform distribution i.e. [0,1)
+    //     // std::uniform_real_distribution<double> uniform_dist(0,1.0);
+    //     // auto skew_norm_dist_x = boost::math::skew_normal_distribution<double>(
+    //     //       0, 1., 3.);
+    //     // //auto skew_norm_dist_y = boost::math::skew_normal_distribution<double>(
+    //     // //      0, 1., 0.);
+    //     // auto skew_norm_dist_y = boost::math::normal_distribution<double>(0,0.4);
+    //     // // Take a different value every time to generate probabilities from 0 to 1
+    //     // for (int j = 0; j<sampleTime; j++)
+    //     // {
+    //     //   noise_generator.seed(rd());
+    //     //   auto probability = uniform_dist(noise_generator);
+    //     //   //double skew_normal_sample_point = boost::math::quantile(skew_norm_dist, probability);
+    //     //   double sampleX = boost::math::quantile(skew_norm_dist_x, probability)/3.0;
+    //     //   noise_generator.seed(rd());
+    //     //   probability = uniform_dist(noise_generator);
+          
+    //     //   double sampleY = boost::math::quantile(skew_norm_dist_y, probability)/5.0;
+    //     //   double inflationOfDynamicObstacleX = positionOfDynamicObstacle.first + cos(estimatedYaw) * sampleX + cos(estimatedYaw + M_PI_2)*sampleY;
+    //     //   double inflationOfDynamicObstacleY = positionOfDynamicObstacle.second + sin(estimatedYaw) * sampleX + sin(estimatedYaw + M_PI_2)*sampleY;  
+    //     //   //pair<double, double> InflationOfDynamicObstacle = make_pair(positionOfDynamicObstacle..first + sampling(),positionOfDynamicObstacle..second + sampling());
+    //     //   unsigned int inflationMx,inflationMy;
+
+    //     //   //RCLCPP_INFO(getLogger(),"Sample Test %.2f, %.2f",inflationOfDynamicObstacleX,inflationOfDynamicObstacleY);
+    //     //   if(abs(inflationOfDynamicObstacleX) < 2.5 || abs(inflationOfDynamicObstacleY) < 2.5)
+    //     //   {
+            
+    //     //     costmap_->worldToMap(inflationOfDynamicObstacleX,inflationOfDynamicObstacleY,inflationMx,inflationMy);
+    //     //     //RCLCPP_INFO(getLogger(),"Sample Test2 %d, %d",inflationMx,inflationMy);
+            
+    //     //     mapOfDynamicObstacle.at<uchar>(inflationMy,inflationMx) = 254;
+            
+    //     //     //costmap_->setCost(inflationMx, inflationMy,50);
+    //     //   }
+    //     //   //RCLCPP_INFO(getLogger(),"Sample Test %.2f, %.2f",sampling(),sampling());
+    //     //   //sampleList.push_back(sampling());
+    //     // }
+    //     //auto element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2, 2), cv::Point(1, 1));
+    //     // cv::dilate(mapOfDynamicObstacle.clone(), mapOfDynamicObstacle, cv::getStructuringElement(cv::MORPH_ELLIPSE,cv::Size(2,2),cv::Point(1,1)));
+    //     //cv::erode(mapOfDynamicObstacle.clone(),mapOfDynamicObstacle,cv::getStructuringElement(cv::MORPH_ERODE,cv::Size(3,3),cv::Point(2,2)));
+    //     //cv::morphologyEx(mapOfDynamicObstacle.clone(),mapOfDynamicObstacle,cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_OPEN, cv::Size(3, 3)));
+    //    // cv::erode(mapOfDynamicObstacle.clone(),mapOfDynamicObstacle,cv::getStructuringElement(cv::MORPH_ERODE,cv::Size(3,3),cv::Point(2,2)));
+    //     //cv::dilate(mapOfDynamicObstacle.clone(), mapOfDynamicObstacle, element);
+    //     //element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3), cv::Point(2, 2));
+    //     //cv::dilate(mapOfDynamicObstacle.clone(), mapOfDynamicObstacle.clone(), element);
+        
+    //     //cv::GaussianBlur(mapOfDynamicObstacle.clone(), mapOfDynamicObstacle,  cv::Size(5, 5),0);
+        
+    //     //cv::namedWindow("img3");
+        
+    //     // cv::imshow("img3",mapOfDynamicObstacle);
+    //     // cv::waitKey(1);
+    //   }
+    // }
+    //example to visualize filtered unknown static obstacle
+
+    // if(obstacleId.size())
+    // {  
+    //   std::sort(obstacleId.begin(), obstacleId.end(),[](int a, int b){return a<b;});
+    //   RCLCPP_INFO(getLogger(),"Erase unknown static obstacle(trivial velocity) for visualization");
+    //   for(int i = obstacleId.size()-1; i>-1; i--)
+    //   {
+    //     RCLCPP_INFO(getLogger(), "Erase CheckPoint..");
+    //     polygons->erase(polygons->begin()+obstacleId[i]);
+    //     RCLCPP_INFO(getLogger(), "Erase CheckPoint..0");
+    //     obstacleId.erase(obstacleId.begin()+i);
+    //     RCLCPP_INFO(getLogger(), "Erase CheckPoint..1");
+    //     //RCLCPP_INFO(getLogger(),"remain number of obstacle %d", obstacleId.size());
+    //   }
+    // }
     // replace shared polygon container
+
+
+    
+    //need tracker Container update function 
     updatePolygonContainer(polygons);
     //RCLCPP_INFO(getLogger(), "polygon size %d",polygons->size());
 }
 
 void CostmapToPolygonsDBSMCCH::setCostmap2D(nav2_costmap_2d::Costmap2D *costmap)
+
 {
     if (!costmap)
       return;
-
+    trackers_ = std::make_shared<std::vector<KalmanEigen>>();
     costmap_ = costmap;
-
     updateCostmap2D();
+
 }
 
 void CostmapToPolygonsDBSMCCH::updateCostmap2D()
@@ -389,7 +618,7 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
         RCLCPP_ERROR(getLogger(), "Cannot update costmap since the mutex pointer is null");
         return;
       }
-
+      
       // TODO: currently dynamic reconigure is not supported in ros2
       { // get a copy of our parameters from dynamic reconfigure
         std::lock_guard<std::mutex> lock(parameter_mutex_);
@@ -412,15 +641,135 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       for (auto& n : neighbor_lookup_)
         n.clear();
 
-      // get indices of obstacle cells
+      auto layers = costmap_ros_->getLayeredCostmap()->getPlugins();
+      cv::Mat costmapMat;
+      cv::Mat inscribeCostmap;
+      cv::Mat element2;
       
-      for(std::size_t i = 0; i < costmap_->getSizeInCellsX(); i++)
+      unsigned int costMapSizeX = costmap_->getSizeInCellsX();
+      unsigned int costMapSizeY = costmap_->getSizeInCellsY();
+      double costMapOriginX = costmap_->getOriginX();
+      double costMapOriginY = costmap_->getOriginY();
+      nav2_costmap_2d::Costmap2D static_costmap = nav2_costmap_2d::Costmap2D(costMapSizeX,costMapSizeY, costmap_->getResolution(),costMapOriginX, costMapOriginY);
+      // double vertX,vertY;
+      // double SizeX = static_cast<double>(costMapSizeX);
+      // double SizeY = static_cast<double>(costMapSizeY);
+      // double OriginX = 0.0;
+      // double OriginY = 0.0;
+      for (auto it = layers->begin(); it != layers->end(); it++)
       {
-        for(std::size_t j = 0; j < costmap_->getSizeInCellsY(); j++)
+        st_ptr = std::dynamic_pointer_cast<nav2_costmap_2d::StaticLayer>(*it);
+        if(!st_ptr)
+          continue;
+        //std::unique_lock<nav2_costmap_2d::StaticLayer::mutex_t> master_lock(st_ptr);
+      
+        //st_ptr->onInitialize();
+        //st_ptr->reset();
+        //RCLCPP_INFO(getLogger(),"Set StaticLayer");
+
+        //RCLCPP_INFO(getLogger(), "Origin(%.2f,%.2f) Size(%d,%d)",costMapOriginX,costMapOriginY,costMapSizeX,costMapSizeY);
+        
+        //static_costmap = std::make_shared<nav2_costmap_2d::Costmap2D>(costmap_->getSizeInCellsX(), costmap_->getSizeInCellsY(), costmap_->getResolution(), costmap_->getOriginX(), costmap_->getOriginY());
+        //static_costmap->resetMap(0,0,static_costmap->getSizeInCellsX(), static_costmap->getSizeInCellsY());
+        //RCLCPP_INFO(getLogger(),"Set1");
+        //costmap_->mapToWorld(0,0,vertX,vertY);
+        //costmap_->mapToWorld(costMapSizeX,costMapSizeY,vertX,vertY);
+        //RCLCPP_INFO(getLogger(),"Set2-0");
+        //st_ptr->onInitialize();
+        //st_ptr->updateBounds(0,0,0,&OriginX,&OriginY,&SizeX,&SizeY);
+        //RCLCPP_INFO(getLogger(),"Set2-1");
+        //static_costmap.resetMap(0,0,costMapSizeX,costMapSizeY);
+        st_ptr->updateCosts(static_costmap, 0, 0, costMapSizeX, costMapSizeY);
+        //RCLCPP_INFO(getLogger(),"Set2-2");
+        costmapMat = cv::Mat(costMapSizeY, costMapSizeX, CV_8UC1, static_costmap.getCharMap()).clone();
+        //RCLCPP_INFO(getLogger(), "Size 1 (%d,%d) Size 2 (%d,%d)",costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY(),costmapMat.size().width,costmapMat.size().height);
+        element2 = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5), cv::Point(3, 3));
+        cv::dilate(costmapMat.clone(), inscribeCostmap, element2);
+        //RCLCPP_INFO(getLogger(),"Set2-3");
+        //RCLCPP_INFO(getLogger(), "Size 1 (%d,%d) Size 2 (%d,%d)",costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY(),inscribeCostmap.size().width,inscribeCostmap.size().height);
+        cv::GaussianBlur(inscribeCostmap, inscribeCostmap,  cv::Size(5, 5),0);
+        // cv::namedWindow("img1");
+        // cv::namedWindow("img2");
+        // cv::imshow("img1",costmapMat);
+        // cv::imshow("img2",inscribeCostmap);
+        // cv::waitKey(1);
+        //RCLCPP_INFO(getLogger(),"Set2-4");
+      }
+      
+      //RCLCPP_INFO(getLogger(),"Set3");
+      //std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock2(*static_costmap->getMutex());
+      //if(st_ptr)
+      //  st_ptr->updateCosts(*static_costmap, 0, 0, static_costmap->getSizeInCellsX(), static_costmap->getSizeInCellsY());
+      
+      //RCLCPP_INFO(getLogger(), "Size(%d,%d)",costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY());
+      //cv::Mat element2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(3, 3));
+      //cv::dilate(costmapMat, inscribeCostmap, element2);
+      //cv::GaussianBlur(costmapMat, inscribeCostmap,  cv::Size(7, 7),0);
+      for(int i = 0; i < costmap_->getSizeInCellsX(); i++)
+      {
+        for(int j = 0; j < costmap_->getSizeInCellsY(); j++)
         {
+          //RCLCPP_INFO(getLogger(),"Set4");
           int value = costmap_->getCost(i,j);
-          if(value >= nav2_costmap_2d::LETHAL_OBSTACLE)
+          //int staticValue = static_costmap.getCost(i,j);
+          int staticValue = inscribeCostmap.at<uchar>(j,i);
+          //RCLCPP_INFO(getLogger(),"value %d, staticValue %d",value,staticValue);
+          if(staticValue >0)
+             continue;
+          // //int staticValue = static_costmap->getCost(i,j);
+          // //int inscribe_radius = 200;
+          // //int resolution = 50;
+          // //double wx,wy;
+          // //RCLCPP_INFO(getLogger(),"Set2");
+          // //static_costmap->mapToWorld(i,j,wx,wy);
+          // //RCLCPP_INFO(getLogger(),"Set3 %d %d -> %.2f %.2f",i,j,wx,wy);
+          
+          // // int wxInt = wx*1000;
+          // // int wyInt = wy*1000;
+          // // unsigned int inscribeMx = 0;
+          // // unsigned int inscribeMy = 0;
+          // // bool occupied = false;
+          // //   for(int angle = 0; angle<360; angle++)
+          // //   {
+          // //     double rad = angle * 3.1415926/180.0;
+          // //     if(!occupied)
+          // //     {
+          // //       for(int n = 0; n<=inscribe_radius; n=n+resolution)
+          // //       {
+          // //         double inscribeWx = (wxInt+n*cos(rad))/1000.0;
+          // //         double inscribeWy = (wyInt+n*sin(rad))/1000.0;
+                  
+          // //         static_costmap->worldToMap(inscribeWx,inscribeWy,inscribeMx,inscribeMy);
+          // //         //RCLCPP_INFO(getLogger(),"Set3 %.2f %.2f -> %d %d",inscribeWx,inscribeWy,inscribeMx,inscribeMy);
+          // //         int inscribeValue = static_costmap->getCost(inscribeMx,inscribeMy);
+          // //         //RCLCPP_INFO(getLogger(),"Cost %d",inscribeValue);
+          // //         if(inscribeMx > 60 || inscribeMy > 60)
+          // //           continue;
+          // //         if(inscribeValue>0)
+          // //         {  
+          // //           RCLCPP_INFO(getLogger(),"Set4-1");
+          // //           occupied= true;
+          // //         }
+          // //       }
+          // //     }
+          // //     else
+          // //       break;
+          // //   }
+          // // RCLCPP_INFO(getLogger(),"Set5");
+          // // if(occupied)
+          // //   continue;
+
+
+          // double searchDistance = 0.2;
+          // double resolution 0.05;
+          // int searchPixel = int(searchDistance/resolution)
+          // for(int n = 0; n <searchPixel; n++)
+          // {}
+          //int staticValue = StaticCostmap->getCost(i,j);
+          //RCLCPP_INFO(getLogger(),"Set6 Value %d",staticValue);
+          if(value >= nav2_costmap_2d::LETHAL_OBSTACLE && staticValue !=value)
           {
+            //RCLCPP_INFO(getLogger(),"(%d,%d) Value %d Static value %d",i,j,value,staticValue);
             double x, y;
             costmap_->mapToWorld((unsigned int)i, (unsigned int)j, x, y);
             addPoint(x, y);
@@ -712,6 +1061,6 @@ PolygonContainerConstPtr CostmapToPolygonsDBSMCCH::getPolygons()
   //parameter_buffered_.min_keypoint_separation_ = config.convex_hull_min_pt_separation;
 //}
 
-}//end namespace costmap_converter
+} //end namespace costmap_converter
 
 

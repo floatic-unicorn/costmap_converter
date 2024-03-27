@@ -13,6 +13,7 @@ Build status of the *master* branch:
 - Christoph Rösmann
 - Franz Albers (*CostmapToDynamicObstacles* plugin)
 - Otniel Rinaldo
+- Myeonggyun Kim (costmapConverter based Dynamic Obstacle Tracker)
 
 
 ### License

@@ -47,6 +47,8 @@
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <nav2_costmap_2d/costmap_2d.hpp>
 #include <nav2_costmap_2d/costmap_2d_ros.hpp>
+#include <nav2_costmap_2d/layered_costmap.hpp>
+#include <nav2_costmap_2d/static_layer.hpp>
 #include <geometry_msgs/msg/polygon.hpp>
 #include <costmap_converter_msgs/msg/obstacle_array_msg.hpp>
 #include <costmap_converter/KalmanEigen.h>
@@ -65,7 +67,7 @@ typedef std::shared_ptr<std::vector<KalmanEigen>> TrackerContainerPtr;
 //! Typedef for a shared polygon container (read-only access)
 typedef std::shared_ptr<const std::vector<KalmanEigen>> TrackerContainerConstPtr;
 typedef std::shared_ptr<const std::vector<geometry_msgs::msg::Polygon>> PolygonContainerConstPtr;
-  
+std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
 template <typename NodeT, typename ParamType>
 ParamType declareAndGetParam(const NodeT & node, const std::string & param_name, const ParamType default_value = ParamType())
 {
@@ -152,16 +154,37 @@ public:
    * @return Shared instance of the current obstacle container
    * @sa getPolygons
    */
+    // virtual ObstacleArrayConstPtr getObstacles()
+    // {
+    //   ObstacleArrayPtr obstacles = std::make_shared<costmap_converter_msgs::msg::ObstacleArrayMsg>();
+    //   PolygonContainerConstPtr polygons = getPolygons();
+    //   if (polygons)
+    //   {
+    //     for (const geometry_msgs::msg::Polygon& polygon : *polygons)
+    //     {
+    //       obstacles->obstacles.emplace_back();
+    //       obstacles->obstacles.back().polygon = polygon;
+    //     }
+    //   }
+    //   return obstacles;
+    // }
     virtual ObstacleArrayConstPtr getObstacles()
     {
       ObstacleArrayPtr obstacles = std::make_shared<costmap_converter_msgs::msg::ObstacleArrayMsg>();
-      PolygonContainerConstPtr polygons = getPolygons();
-      if (polygons)
+      TrackerContainerPtr trackers = getTrackers();
+      if(trackers->size())
       {
-        for (const geometry_msgs::msg::Polygon& polygon : *polygons)
+        for(int i =0; i < trackers->size(); i++)
         {
+          pair<double, double> position = (*trackers)[i].getState(0);
+          pair<double, double> velocity = (*trackers)[i].getState(1);
           obstacles->obstacles.emplace_back();
-          obstacles->obstacles.back().polygon = polygon;
+          obstacles->obstacles.back().id = (*trackers)[i].id;
+          obstacles->obstacles.back().position.x = position.first;
+          obstacles->obstacles.back().position.y = position.second;
+          obstacles->obstacles.back().velocity.x = velocity.first;
+          obstacles->obstacles.back().velocity.y = velocity.second;
+          obstacles->obstacles.back().polygon = (*trackers)[i].pointList;
         }
       }
       return obstacles;
@@ -310,97 +333,6 @@ private:
  *
  * This class should not be instantiated.
  */
-class BaseCostmapToDynamicObstacles : public BaseCostmapToPolygons
-{
-public:
-
-  /**
-   * @brief Load underlying static costmap conversion plugin via plugin-loader
-   * @param plugin_name Exact class name of the plugin to be loaded, e.g.
-   *                    costmap_converter::CostmapToPolygonsDBSMCCH
-   * @param nh_parent   NodeHandle which is extended by the namespace of the static conversion plugin
-   */
-  void loadStaticCostmapConverterPlugin(const std::string& plugin_name, rclcpp::Node::SharedPtr nh_parent)
-  {
-    try
-    {
-      static_costmap_converter_ = static_converter_loader_.createSharedInstance(plugin_name);
-
-      if(std::dynamic_pointer_cast<BaseCostmapToDynamicObstacles>(static_costmap_converter_))
-      {
-        throw pluginlib::PluginlibException("The specified plugin for static costmap conversion is a dynamic plugin. Specify a static plugin.");
-      }
-//      std::string raw_plugin_name = static_converter_loader_.getName(plugin_name);
-      static_costmap_converter_->initialize(nh_parent);
-      setStaticCostmapConverterPlugin(static_costmap_converter_);
-      RCLCPP_INFO(getLogger(), "CostmapToDynamicObstacles: underlying costmap conversion plugin for static obstacles %s loaded.", plugin_name.c_str());
-    }
-    catch(const pluginlib::PluginlibException& ex)
-    {
-      RCLCPP_WARN(getLogger(), "CostmapToDynamicObstacles: The specified costmap converter plugin cannot be loaded. "
-                               "Continuing without subsequent conversion of static obstacles. Error message: %s", ex.what());
-      static_costmap_converter_.reset();
-    }
-  }
-
-  /**
-   * @brief Set the underlying plugin for subsequent costmap conversion of the static background of the costmap
-   * @param static_costmap_converter shared pointer to the static costmap conversion plugin
-   */
-  void setStaticCostmapConverterPlugin(std::shared_ptr<BaseCostmapToPolygons> static_costmap_converter)
-  {
-    static_costmap_converter_ = static_costmap_converter;
-  }
-
-  /**
-   * @brief Set the costmap for the underlying plugin
-   * @param static_costmap Costmap2D, which contains the static part of the original costmap
-   */
-  void setStaticCostmap(std::shared_ptr<nav2_costmap_2d::Costmap2D> static_costmap)
-  {
-    static_costmap_converter_->setCostmap2D(static_costmap.get());
-  }
-
-  /**
-   * @brief Apply the underlying plugin for static costmap conversion
-   */
-  void convertStaticObstacles()
-  {
-    static_costmap_converter_->compute();
-  }
-
-  /**
-   * @brief Get the converted polygons from the underlying plugin
-   * @return Shared instance of the underlying plugins polygon container
-   */
-  PolygonContainerConstPtr getStaticPolygons()
-  {
-    return static_costmap_converter_->getPolygons();
-  }
-
-  /**
-   * @brief Determines whether an additional plugin for subsequent costmap conversion is specified
-   *
-   * @return true, if a plugin for subsequent costmap conversion is specified
-   */
-  bool stackedCostmapConversion()
-  {
-    if(static_costmap_converter_)
-      return true;
-    else
-      return false;
-  }
-
-protected:
-  /**
-   * @brief Protected constructor that should be called by subclasses
-   */
-  BaseCostmapToDynamicObstacles() : static_converter_loader_("costmap_converter", "costmap_converter::BaseCostmapToPolygons"), static_costmap_converter_() {}
-
-private:
-  pluginlib::ClassLoader<BaseCostmapToPolygons> static_converter_loader_;
-  std::shared_ptr<BaseCostmapToPolygons> static_costmap_converter_;
-};
 
 
 }

@@ -12,6 +12,7 @@ void KalmanEigen::init_kf(pair<double,double> stateMat) // mode 설정
 	predState = 0;
 	operateTime=0.0;
 	unmatchedHistory = 0;
+	matchedHistory = 0;
 	x = Eigen::MatrixXd::Identity(stateNum, 1); //state Matrix
 	A = Eigen::MatrixXd::Identity(stateNum, stateNum); // Transition Matrix 
 	w = Eigen::MatrixXd::Identity(stateNum, 1); // Process Noise 
@@ -170,6 +171,8 @@ void KalmanEigen::update(pair<double,double> stateMat)
 	predState = 0;
 	operateTime = 0.0;
 	unmatchedHistory = 0;
+	matchedHistory++;
+	
 }
 
 

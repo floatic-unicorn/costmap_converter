@@ -1,6 +1,8 @@
 #include <cmath>
 #include <Eigen/Core>
 #include <Eigen/Dense>
+#include <vector>
+#include <geometry_msgs/msg/polygon.hpp>
 using namespace std;
 // This class represents the internel state of individual tracked objects observed as bounding box.
 
@@ -15,10 +17,12 @@ public:
 		init_kf(pair<double,double> ());
 		
 	}
-	KalmanEigen(pair<double,double> stateMat,int count)
+	KalmanEigen(pair<double,double> stateMat,int count, int obsid, geometry_msgs::msg::Polygon points)
 	{
 		init_kf(stateMat);
 		id = count;
+		obstacleId = obsid;
+		pointList = points;
 	}
 
 	~KalmanEigen()
@@ -28,9 +32,12 @@ public:
 	pair<double,double>  predict();
 	void update(pair<double,double> stateMat);
 	int unmatchedHistory;
+	int matchedHistory;
 	pair<double,double>  getState(int stateMode);
 	int id;
 	int count;
+	int obstacleId;
+	geometry_msgs::msg::Polygon pointList;
 private:
 	void init_kf(pair<double,double> stateMat);
 
@@ -52,6 +59,7 @@ private:
 	
 	float operateTime;
 	int filterMode;
+	
     //std::vector<stateType> predList;
 };
 

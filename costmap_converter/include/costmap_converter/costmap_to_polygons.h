@@ -80,9 +80,11 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
   public:
     HungarianAlgorithm HungAlgo;
     TrackerContainerPtr trackers_;
+    
     struct redefObs
     {
       double x,y;
+      int id;
     };
     /**
      * @struct KeyPoint
@@ -179,7 +181,8 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
     
     
   protected:
-    
+    //std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    //std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     /**
      * @brief DBSCAN algorithm for clustering 
      * 
@@ -332,7 +335,8 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
     //dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>* dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
    
     nav2_costmap_2d::Costmap2D *costmap_; //!< Pointer to the costmap2d
-    
+    std::shared_ptr<nav2_costmap_2d::Costmap2D> static_costmap;
+    std::shared_ptr<nav2_costmap_2d::StaticLayer> st_ptr;
 }; 
 
   
