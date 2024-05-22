@@ -30,12 +30,13 @@ public:
 private:
     rclcpp::Subscription<costmap_converter_msgs::msg::ObstacleArrayMsg>::SharedPtr obstacle_sub_;
     void obstacleCallback(const costmap_converter_msgs::msg::ObstacleArrayMsg::SharedPtr msg);
-    
+    nav2_costmap_2d::Costmap2D seen_;
     double last_min_x_, last_min_y_, last_max_x_, last_max_y_;
     bool need_recalculation_;
     int GRADIENT_SIZE = 20;
     int GRADIENT_FACTOR = 10;
-
+    double sigma = 1.0;
+    double mu = 0.0;
 };
 
 } // namespace

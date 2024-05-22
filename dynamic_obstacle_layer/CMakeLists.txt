@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.5)
 project(dynamic_obstacle_layer)
 
 set(lib_name ${PROJECT_NAME}_core)
@@ -30,9 +30,9 @@ find_package(pluginlib REQUIRED)
 
 set(dep_pkgs
     rclcpp
+    geometry_msgs
     costmap_converter_msgs
     nav2_costmap_2d
-    geometry_msgs
     pluginlib)
 
 # === Build ===

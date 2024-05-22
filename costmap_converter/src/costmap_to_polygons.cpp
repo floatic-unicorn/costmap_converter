@@ -129,11 +129,12 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
   BaseCostmapToPolygons::initialize(nh);
 
   costmap_ = NULL;
-
-  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.3);
+  RCLCPP_INFO(nh->get_logger(), "Dynamic Obstacle Tracker");
+  
+  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.5);
   RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
   
-  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 2);
+  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 4);
   RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
   
   parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 80);
@@ -186,11 +187,11 @@ void CostmapToPolygonsDBSMCCH::compute()
     //RCLCPP_INFO(getLogger(), "4");
 
     // add convex hulls to polygon container
-    for (std::size_t i = 1; i <clusters.size(); ++i) // skip first cluster, since it is just noise
-    {
-      polygons->push_back( geometry_msgs::msg::Polygon() );
-      convexHull2(clusters[i], polygons->back() );
-    }
+    // for (std::size_t i = 1; i <clusters.size(); ++i) // skip first cluster, since it is just noise
+    // {
+    //   polygons->push_back( geometry_msgs::msg::Polygon() );
+    //   convexHull2(clusters[i], polygons->back() );
+    // }
 
     // add our non-cluster points to the polygon container (as single points)
     // if (!clusters.empty())
@@ -207,7 +208,7 @@ void CostmapToPolygonsDBSMCCH::compute()
     pair<double,double> obstacleVelocity;
     
     unsigned int historyThreshold = 1;
-    int obstaclesSize = polygons->size();
+    int obstaclesSize = clusters.size()-1;
     int trackerSize = trackers_->size();
     //RCLCPP_INFO(getLogger(), "tracking start ");
 
@@ -217,20 +218,22 @@ void CostmapToPolygonsDBSMCCH::compute()
     {
       double pSumX = 0;
       double pSumY = 0;
-      size_t len = (*polygons)[i].points.size();
+      size_t len = clusters[i+1].size();
       //RCLCPP_INFO(getLogger(), "clusters size %d points %d",clusters.size(),clusters[i].size());
-      for(int j=0; j<len; j++)
-      {     
-        pSumX += (*polygons)[i].points[j].x;
-        pSumY += (*polygons)[i].points[j].y;
-        //RCLCPP_INFO(getLogger(), "polygon(%d) %.2f %.2f",i,(*polygons)[i].points[j].x,(*polygons)[i].points[j].y);
-      }
+      // for(int j=0; j<len; j++)
+      // {     
+      //   pSumX += (*polygons)[i].points[j].x;
+      //   pSumY += (*polygons)[i].points[j].y;
+      //   //RCLCPP_INFO(getLogger(), "polygon(%d) %.2f %.2f",i,(*polygons)[i].points[j].x,(*polygons)[i].points[j].y);
+      // }
       geometry_msgs::msg::Polygon cluster; 
-      for(int j=0; j<clusters[i+1].size(); j++)
+      for(int j=0; j<len; j++)
       {
         cluster.points.push_back(geometry_msgs::msg::Point32());
         cluster.points.back().x = clusters[i+1][j].x;
         cluster.points.back().y = clusters[i+1][j].y;
+        pSumX += clusters[i+1][j].x;
+        pSumY += clusters[i+1][j].y;
         //RCLCPP_INFO(getLogger(), "cluster(%d) %.2f %.2f",i,cluster.points.back().x,cluster.points.back().y);
       }
       RCLCPP_INFO(getLogger(), "cluster size %d",cluster.points.size());
@@ -723,7 +726,7 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
           // //RCLCPP_INFO(getLogger(),"Set2");
           // //static_costmap->mapToWorld(i,j,wx,wy);
           // //RCLCPP_INFO(getLogger(),"Set3 %d %d -> %.2f %.2f",i,j,wx,wy);
-          
+          //RCLCPP_INFO(getLogger(),"Cost(%d,%d) : %d",i,j,value);
           // // int wxInt = wx*1000;
           // // int wyInt = wy*1000;
           // // unsigned int inscribeMx = 0;
