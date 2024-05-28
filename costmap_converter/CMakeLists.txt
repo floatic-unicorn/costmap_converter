@@ -74,6 +74,11 @@ install(TARGETS standalone_converter
 install(DIRECTORY include/
    DESTINATION include/
 )
+install(DIRECTORY
+  launch
+  params
+  DESTINATION share/${PROJECT_NAME}/
+  )
 
 ament_export_include_directories(include)
 ament_export_libraries(costmap_converter)
