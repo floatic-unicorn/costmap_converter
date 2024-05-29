@@ -10,7 +10,8 @@ def generate_launch_description():
     #tracker_params_file = LaunchConfiguration(
     #'tracker_params_file',
     #default='param/map_info.yaml')
-    tracker_params_file = get_package_share_directory('costmap_converter')+'params/map_info.yaml'
+    tracker_params_file = get_package_share_directory('costmap_converter')+'/params/map_info.yaml'
+    print(tracker_params_file)
     #declare_tracker_params_file = DeclareLaunchArgument(
     #'tracker_params_file',
     #default_value=tracker_params_file,
