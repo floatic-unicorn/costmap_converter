@@ -1,8 +1,8 @@
 converter_costmap:
   converter_costmap:
     ros__parameters:
-      update_frequency: 20.0
-      publish_frequency: 1.0
+      update_frequency: 10.0
+      publish_frequency: 5.0
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
@@ -33,7 +33,6 @@ converter_costmap:
           inf_is_vailed: True
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: "/navigation/map"
         map_subscribe_transient_local: True
-        enabled: True
+        map_topic: "/navigation/map"
       always_send_full_costmap: False

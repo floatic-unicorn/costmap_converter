@@ -659,11 +659,13 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       // double SizeY = static_cast<double>(costMapSizeY);
       // double OriginX = 0.0;
       // double OriginY = 0.0;
+      if(!st_ptr)
+      {
       for (auto it = layers->begin(); it != layers->end(); it++)
       {
         st_ptr = std::dynamic_pointer_cast<nav2_costmap_2d::StaticLayer>(*it);
-        if(!st_ptr)
-          continue;
+        if(st_ptr)
+          break;
         //std::unique_lock<nav2_costmap_2d::StaticLayer::mutex_t> master_lock(st_ptr);
       
         //st_ptr->onInitialize();
@@ -682,6 +684,10 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
         //st_ptr->updateBounds(0,0,0,&OriginX,&OriginY,&SizeX,&SizeY);
         //RCLCPP_INFO(getLogger(),"Set2-1");
         //static_costmap.resetMap(0,0,costMapSizeX,costMapSizeY);
+      }
+      }
+      else{
+        st_ptr->activate();
         st_ptr->updateCosts(static_costmap, 0, 0, costMapSizeX, costMapSizeY);
         //RCLCPP_INFO(getLogger(),"Set2-2");
         costmapMat = cv::Mat(costMapSizeY, costMapSizeX, CV_8UC1, static_costmap.getCharMap()).clone();
@@ -697,8 +703,8 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
         // cv::imshow("img2",inscribeCostmap);
         // cv::waitKey(1);
         //RCLCPP_INFO(getLogger(),"Set2-4");
+        st_ptr->deactivate();
       }
-      
       //RCLCPP_INFO(getLogger(),"Set3");
       //std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock2(*static_costmap->getMutex());
       //if(st_ptr)
