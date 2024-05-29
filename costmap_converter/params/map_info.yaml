@@ -28,7 +28,7 @@ converter_costmap:
           data_type: "LaserScan"
           raytrace_max_range: 10.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 9.0
+          obstacle_max_range: 4.0
           obstacle_min_range: 0.0
           inf_is_vailed: True
       static_layer:

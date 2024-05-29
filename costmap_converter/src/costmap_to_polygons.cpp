@@ -134,10 +134,10 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
   parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.5);
   RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
   
-  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 10);
+  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 70);
   RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
   
-  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 200);
+  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 300);
   RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
   
   parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
