@@ -7,8 +7,8 @@ converter_costmap:
       robot_base_frame: base_link
       use_sim_time: True
       rolling_window: True
-      width: 9
-      height: 9
+      width: 8
+      height: 8
       resolution: 0.025
       #robot_radius: 0.16
       plugins: ["static_layer","obstacle_layer","multi_robot_layer"]
@@ -21,7 +21,7 @@ converter_costmap:
         enabled: True
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_filtered
           max_obstacle_height: 2.5
           clearing: True
           marking: True
