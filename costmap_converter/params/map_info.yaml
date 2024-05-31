@@ -11,11 +11,11 @@ converter_costmap:
       height: 8
       resolution: 0.025
       #robot_radius: 0.16
-      plugins: ["static_layer","obstacle_layer","multi_robot_layer"]
-      multi_robot_layer:
-        plugin: "floatic_nav_costmap_layer::MultiRobotLayer"
-        transform_tolerance: 1.0
-        look_ahead_time: 0.55
+      plugins: ["static_layer","obstacle_layer"]
+      #multi_robot_layer:
+      #  plugin: "floatic_nav_costmap_layer::MultiRobotLayer"
+      #  transform_tolerance: 1.0
+      #  look_ahead_time: 0.55
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
