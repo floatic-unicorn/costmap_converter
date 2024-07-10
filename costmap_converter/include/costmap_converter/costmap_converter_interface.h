@@ -54,6 +54,8 @@
 #include <costmap_converter_msgs/msg/obstacle_array_msg.hpp>
 #include <costmap_converter/KalmanEigen.h>
 #include <costmap_converter/Hungarian.h>
+#include <nav2_costmap_2d/clear_costmap_service.hpp>
+
 namespace costmap_converter
 {
   
@@ -77,6 +79,7 @@ ParamType declareAndGetParam(const NodeT & node, const std::string & param_name,
   }
   ParamType result = default_value;
   node->get_parameter(param_name, result);
+
   return result;
 }
 
@@ -172,6 +175,7 @@ public:
     virtual ObstacleArrayConstPtr getObstacles()
     {
       ObstacleArrayPtr obstacles = std::make_shared<costmap_converter_msgs::msg::ObstacleArrayMsg>();
+      //obstacles->obstacles.clear();
       TrackerContainerPtr trackers = getTrackers();
       if(trackers->size())
       {
@@ -303,10 +307,13 @@ protected:
     {
       //RCLCPP_INFO(nh_->get_logger(), "1.start compute..");
       auto now = nh_->now();
+
       updateCostmap2D();
       compute();
+
       auto ex_time = nh_->now() - now;
       //RCLCPP_INFO(nh_->get_logger(), "2.converting time : %f", ex_time.seconds());
+      
     }
 
     rclcpp::Logger getLogger() const

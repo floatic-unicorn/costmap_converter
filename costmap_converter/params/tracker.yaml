@@ -1,21 +1,30 @@
+costmap_converter:
+    ros__parameters:
+      cluster_visualize: True
+      cluster_min_points: 10
+      cluster_max_points: 300
+      cluster_max_distance: 0.5
+      convex_hull_min_pt_separation: 0.1
+      tracker_unmatched_history: 1
+      tracker_matching_distance: 0.5
 converter_costmap:
   converter_costmap:
     ros__parameters:
       update_frequency: 20.0
-      publish_frequency: 5.0
+      publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
       rolling_window: True
       width: 8
       height: 8
-      resolution: 0.025
+      resolution: 0.05
       #robot_radius: 0.16
-      plugins: ["static_layer","obstacle_layer"]
-      #multi_robot_layer:
-      #  plugin: "floatic_nav_costmap_layer::MultiRobotLayer"
-      #  transform_tolerance: 1.0
-      #  look_ahead_time: 0.55
+      plugins: ["static_layer","obstacle_layer","multi_robot_layer"]
+      multi_robot_layer:
+        plugin: "floatic_nav_costmap_layer::MultiRobotLayer"
+        transform_tolerance: 1.0
+        look_ahead_time: 0.55
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True

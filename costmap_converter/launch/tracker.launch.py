@@ -10,7 +10,7 @@ def generate_launch_description():
     #tracker_params_file = LaunchConfiguration(
     #'tracker_params_file',
     #default='param/map_info.yaml')
-    tracker_params_file = get_package_share_directory('costmap_converter')+'/params/map_info.yaml'
+    tracker_params_file = get_package_share_directory('costmap_converter')+'/params/tracker.yaml'
     print(tracker_params_file)
     #declare_tracker_params_file = DeclareLaunchArgument(
     #'tracker_params_file',
@@ -19,6 +19,7 @@ def generate_launch_description():
     dot_node = Node(
         package='costmap_converter',
         executable='standalone_converter',
+        prefix=['xterm -e gdb -ex=r --args'],
         parameters=[tracker_params_file],
         output="screen")
     #ld = LaunchDescription()

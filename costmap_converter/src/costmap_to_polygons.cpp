@@ -66,7 +66,7 @@ std::vector<geometry_msgs::msg::Point32> douglasPeucker(std::vector<geometry_msg
   {
     return std::vector<geometry_msgs::msg::Point32>(begin, end);
   }
-
+  
   // Find the point with the maximum distance from the line [begin, end)
   double dmax = std::numeric_limits<double>::lowest();
   std::vector<geometry_msgs::msg::Point32>::iterator max_dist_it;
@@ -126,22 +126,44 @@ CostmapToPolygonsDBSMCCH::~CostmapToPolygonsDBSMCCH()
 
 void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
 {
-  BaseCostmapToPolygons::initialize(nh);
-
+  BaseCostmapToPolygons::initialize(
+          std::make_shared<rclcpp::Node>("intra_node", "costmap_converter"));
   costmap_ = NULL;
-  RCLCPP_INFO(nh->get_logger(), "Dynamic Obstacle Tracker");
+  if(!nh->has_parameter("cluster_min_points"))
+  {nh->declare_parameter("cluster_min_points",rclcpp::ParameterValue(parameter_.min_pts_));}
+  nh->get_parameter("cluster_min_points",parameter_.min_pts_);
+  if(!nh->has_parameter("cluster_max_points"))
+  {nh->declare_parameter("cluster_max_points",rclcpp::ParameterValue(parameter_.max_pts_));}
+  nh->get_parameter("cluster_max_points",parameter_.max_pts_);
+  if(!nh->has_parameter("cluster_max_distance"))
+  {nh->declare_parameter("cluster_max_distance",rclcpp::ParameterValue(parameter_.max_distance_));}
+  nh->get_parameter("cluster_max_distance",parameter_.max_distance_);
+  if(!nh->has_parameter("convex_hull_min_pt_separation"))
+  {nh->declare_parameter("convex_hull_min_pt_separation",rclcpp::ParameterValue(parameter_.min_keypoint_separation_));}
+  nh->get_parameter("convex_hull_min_pt_separation",parameter_.min_keypoint_separation_);
+  if(!nh->has_parameter("tracker_unmatched_history"))
+  {nh->declare_parameter("tracker_unmatched_history",rclcpp::ParameterValue(1));}
+  nh->get_parameter("tracker_unmatched_history",tracker_unmatched_history_);
+  if(!nh->has_parameter("tracker_matching_distance"))
+  {nh->declare_parameter("tracker_matching_distance",rclcpp::ParameterValue(0.5));}
+  nh->get_parameter("tracker_matching_distance",tracker_matching_distance_);
+  RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set cluster_min_points %d",parameter_.min_pts_);
+  RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set cluster_max_points %d",parameter_.max_pts_);
+  RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set cluster_max_distance %.2f",parameter_.max_distance_);
+  RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set convex_hull_min_pt_separation %.2f",parameter_.min_keypoint_separation_);
+  // RCLCPP_INFO(nh->get_logger(), "Dynamic Obstacle Tracker");
   
-  parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.5);
-  RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
+  // parameter_.max_distance_ = declareAndGetParam(nh, "cluster_max_distance", 0.5);
+  // RCLCPP_INFO(nh->get_logger(), "cluster max distance : %f", parameter_.max_distance_);
   
-  parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_pts", 70);
-  RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
+  // parameter_.min_pts_ = declareAndGetParam(nh, "cluster_min_points", 70);
+  // RCLCPP_INFO(nh->get_logger(), "cluster min pts : %d", parameter_.min_pts_);
   
-  parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_pts", 300);
-  RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
+  // parameter_.max_pts_ = declareAndGetParam(nh, "cluster_max_points", 300);
+  // RCLCPP_INFO(nh->get_logger(), "cluster max pts : %d", parameter_.max_pts_);
   
-  parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
-  RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
+  //parameter_.min_keypoint_separation_ = declareAndGetParam(nh, "convex_hull_min_pt_separation", 0.1);
+  //RCLCPP_INFO(nh->get_logger(), "convex hull min pt separation : %f", parameter_.min_keypoint_separation_);
 
   parameter_buffered_ = parameter_;
   //costmap_ros = std::make_shared<nav2_costmap_2d::Costmap2DROS>("converter_costmap");
@@ -158,18 +180,19 @@ void CostmapToPolygonsDBSMCCH::initialize(rclcpp::Node::SharedPtr nh)
 void CostmapToPolygonsDBSMCCH::compute()
 {
     std::lock_guard<std::recursive_mutex> lock_guard(*costmap_->getMutex());
+    //costmap_->resetMapToValue(0,0,costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY(),0);
     int cells_x = int(costmap_->getSizeInMetersX() / parameter_.max_distance_) + 1;
     int cells_y = int(costmap_->getSizeInMetersY() / parameter_.max_distance_) + 1;
     if(cells_x != neighbor_size_x_ || cells_y != neighbor_size_y_){
-      RCLCPP_INFO(getLogger(), " update costmap ");
+      //RCLCPP_INFO(getLogger(), " update costmap ");
       updateCostmap2D();
     }
     //updateCostmap2D();
     //RCLCPP_INFO(getLogger(), "1");
     std::vector< std::vector<KeyPoint> > clusters;
-    
+    //RCLCPP_INFO(getLogger(), "1. clusters Size %d", clusters.size());
     dbScan(clusters);
-    
+    //RCLCPP_INFO(getLogger(), "2. clusters Size %d", clusters.size());
     //RCLCPP_INFO(getLogger(), "2");
     static int obsCount = 0;
     //TrackerContainerPtr currentFrameTrackers = std::make_shared<std::vector<KalmanEigen>>();
@@ -214,6 +237,7 @@ void CostmapToPolygonsDBSMCCH::compute()
 
     //////////////////////////////////////////////////////////////////////
     ////////////////////////Redefined Obstacle////////////////////////////
+    //RCLCPP_INFO(getLogger(), "Size Var %d clusters Size %d",obstaclesSize, clusters.size());
     for(int i=0; i< obstaclesSize; i++)
     {
       double pSumX = 0;
@@ -229,14 +253,14 @@ void CostmapToPolygonsDBSMCCH::compute()
       geometry_msgs::msg::Polygon cluster; 
       for(int j=0; j<len; j++)
       {
-        cluster.points.push_back(geometry_msgs::msg::Point32());
+        cluster.points.emplace_back();
         cluster.points.back().x = clusters[i+1][j].x;
         cluster.points.back().y = clusters[i+1][j].y;
         pSumX += clusters[i+1][j].x;
         pSumY += clusters[i+1][j].y;
         //RCLCPP_INFO(getLogger(), "cluster(%d) %.2f %.2f",i,cluster.points.back().x,cluster.points.back().y);
       }
-      RCLCPP_INFO(getLogger(), "cluster size %d",cluster.points.size());
+      //RCLCPP_INFO(getLogger(), "cluster size %d",cluster.points.size());
       cluster2.push_back(cluster);
       
       
@@ -249,7 +273,7 @@ void CostmapToPolygonsDBSMCCH::compute()
     
     if(!trackerSize && obstaclesSize)
     {
-      RCLCPP_INFO(getLogger(), "Num of Tracking Objects = %d",trackerSize);
+      RCLCPP_DEBUG(getLogger(), "Num of Tracking Objects = %d",trackerSize);
       for(auto obs1 : redefinedObstacles)
       {
         obstaclePosition = make_pair(obs1.x,obs1.y);
@@ -259,7 +283,7 @@ void CostmapToPolygonsDBSMCCH::compute()
         //RCLCPP_INFO(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
       }
       if(trackerSize > 0)
-        RCLCPP_INFO(getLogger(), "Input %d obstacle to trackers",trackerSize);
+       RCLCPP_DEBUG(getLogger(), "Input %d obstacle to trackers",trackerSize);
     }
     else if(trackerSize && obstaclesSize)
     {
@@ -298,14 +322,14 @@ void CostmapToPolygonsDBSMCCH::compute()
             (*trackers_)[i].matchedHistory = 0;
             if((*trackers_)[i].unmatchedHistory > historyThreshold)
             {
-              RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
               trackers_->erase(trackers_->begin() + i);
+              RCLCPP_DEBUG(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
             }
           }
           else
           {
             //RCLCPP_INFO(getLogger(), "9");
-            if(distanceMatrix[i][assignment[i]] < 0.5 && assignment[i] != -1)
+            if(distanceMatrix[i][assignment[i]] < tracker_matching_distance_ && assignment[i] != -1)
             {
               
               assignedObstacles.push_back(redefinedObstacles[assignment[i]]);
@@ -319,7 +343,7 @@ void CostmapToPolygonsDBSMCCH::compute()
               //RCLCPP_INFO(getLogger()," Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]);
               //RCLCPP_INFO(getLogger()," trk %d of %d UnmatchHistory %d, obs %d, distance %lf",(*trackers_)[i].id, trackers_->size(), (*trackers_)[i].unmatchedHistory, assignment[i], distanceMatrix[i][assignment[i]]);
               //if(velocity >0.1)
-              RCLCPP_INFO(getLogger(),"(%d)Tracker pos(%.2f,%.2f) vel(%.2f,%.2f)",(*trackers_)[i].id,obstaclePosition.first,obstaclePosition.second,obstacleVelocity.first,obstacleVelocity.second);
+              RCLCPP_DEBUG(getLogger(),"(%d)Tracker pos(%.2f,%.2f) vel(%.2f,%.2f)",(*trackers_)[i].id,obstaclePosition.first,obstaclePosition.second,obstacleVelocity.first,obstacleVelocity.second);
               //redefinedObstacles.erase(redefinedObstacles.begin()+assignment[i]);
               //RCLCPP_INFO(getLogger(),"Assign %d -> %d :: distance %f",(*trackers_)[i].id, assignment[i], distanceMatrix[i][assignment[i]]); 
             }
@@ -329,8 +353,9 @@ void CostmapToPolygonsDBSMCCH::compute()
               (*trackers_)[i].unmatchedHistory++;
               if((*trackers_)[i].unmatchedHistory > historyThreshold)
               {
-                RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
                 trackers_->erase(trackers_->begin() + i);
+                RCLCPP_DEBUG(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
+                
               }
             }
           }
@@ -349,7 +374,7 @@ void CostmapToPolygonsDBSMCCH::compute()
             obsCount++;
             KalmanEigen tracker = KalmanEigen(obstaclePosition,obsCount,obs1.id,cluster2[obs1.id]);
             trackers_->push_back(tracker);
-            RCLCPP_INFO(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
+            RCLCPP_DEBUG(getLogger(),"newDefinedTracker %dth %f %f",obsCount,obstaclePosition.first, obstaclePosition.second);
           }
         }
     }
@@ -361,13 +386,12 @@ void CostmapToPolygonsDBSMCCH::compute()
           (*trackers_)[i].matchedHistory = 0;
           if((*trackers_)[i].unmatchedHistory > historyThreshold)
           {
-            RCLCPP_INFO(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
             trackers_->erase(trackers_->begin() + i);
+            RCLCPP_DEBUG(getLogger(),"%dth Tracker UnmatchedHistory %d, So erase it. Remain Size %d", (*trackers_)[i].id, (*trackers_)[i].unmatchedHistory, trackers_->size());
           }
         }
 
     }
-    
     // for(int i = 0; i<trackerSize; i++)
     // {
     //   (*trackers_)[i].predict();
@@ -615,7 +639,7 @@ void CostmapToPolygonsDBSMCCH::setCostmap2D(nav2_costmap_2d::Costmap2D *costmap)
 void CostmapToPolygonsDBSMCCH::updateCostmap2D()
 {
       occupied_cells_.clear();
-
+      
       if (!costmap_->getMutex())
       {
         RCLCPP_ERROR(getLogger(), "Cannot update costmap since the mutex pointer is null");
@@ -648,12 +672,20 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       cv::Mat costmapMat;
       cv::Mat inscribeCostmap;
       cv::Mat element2;
-      
+      //costmap_ros_->resetLayers();
+      //costmap_ros_->
+      //costmap_ros_->updateMap();
       unsigned int costMapSizeX = costmap_->getSizeInCellsX();
       unsigned int costMapSizeY = costmap_->getSizeInCellsY();
       double costMapOriginX = costmap_->getOriginX();
       double costMapOriginY = costmap_->getOriginY();
-      nav2_costmap_2d::Costmap2D static_costmap = nav2_costmap_2d::Costmap2D(costMapSizeX,costMapSizeY, costmap_->getResolution(),costMapOriginX, costMapOriginY);
+      
+      //if(static_costmap == nullptr)
+      //{
+        //RCLCPP_WARN(getLogger(),"No pointed static costmap");
+      nav2_costmap_2d::Costmap2D static_costmap(costMapSizeX,costMapSizeY, costmap_->getResolution(),costMapOriginX, costMapOriginY);
+        //RCLCPP_WARN(getLogger(),"point static costmap");
+      //}
       // double vertX,vertY;
       // double SizeX = static_cast<double>(costMapSizeX);
       // double SizeY = static_cast<double>(costMapSizeY);
@@ -661,11 +693,15 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       // double OriginY = 0.0;
       if(!st_ptr)
       {
+        RCLCPP_WARN(getLogger(),"No static layer pointer");
       for (auto it = layers->begin(); it != layers->end(); it++)
       {
         st_ptr = std::dynamic_pointer_cast<nav2_costmap_2d::StaticLayer>(*it);
         if(st_ptr)
+        {
+          RCLCPP_INFO(getLogger(),"Assign static layer to pointer");
           break;
+        }
       }
       }
       if(st_ptr){
@@ -696,6 +732,7 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
         //RCLCPP_INFO(getLogger(),"Set2-3");
         //RCLCPP_INFO(getLogger(), "Size 1 (%d,%d) Size 2 (%d,%d)",costmap_->getSizeInCellsX(),costmap_->getSizeInCellsY(),inscribeCostmap.size().width,inscribeCostmap.size().height);
         cv::GaussianBlur(inscribeCostmap, inscribeCostmap,  cv::Size(5, 5),0);
+        RCLCPP_DEBUG(getLogger(),"Updated costmap by static layer");
         // cv::namedWindow("img1");
         // cv::namedWindow("img2");
         // cv::imshow("img1",costmapMat);
@@ -713,6 +750,10 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
       //cv::Mat element2 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(3, 3));
       //cv::dilate(costmapMat, inscribeCostmap, element2);
       //cv::GaussianBlur(costmapMat, inscribeCostmap,  cv::Size(7, 7),0);
+      
+      //cv::Mat costmap_show = cv::Mat(costMapSizeY, costMapSizeX, CV_8UC1, costmap_->getCharMap()).clone();
+      //cv::imshow("img2",costmap_show);
+      //cv::waitKey(1);
       for(int i = 0; i < costmap_->getSizeInCellsX(); i++)
       {
         for(int j = 0; j < costmap_->getSizeInCellsY(); j++)
@@ -775,12 +816,13 @@ void CostmapToPolygonsDBSMCCH::updateCostmap2D()
           // {}
           //int staticValue = StaticCostmap->getCost(i,j);
           //RCLCPP_INFO(getLogger(),"Set6 Value %d",staticValue);
-          if(value >= nav2_costmap_2d::LETHAL_OBSTACLE && staticValue !=value)
+          if(value > 253 && staticValue !=value)
           {
-            //RCLCPP_INFO(getLogger(),"(%d,%d) Value %d Static value %d",i,j,value,staticValue);
             double x, y;
             costmap_->mapToWorld((unsigned int)i, (unsigned int)j, x, y);
+            //RCLCPP_INFO(getLogger(),"(%ld, %ld) -> (%.2f, %.2f)",i,j,x,y);
             addPoint(x, y);
+            RCLCPP_DEBUG(getLogger(),"Found cell of dynamic obstacle",i,j,value,staticValue);
           }
         }
       }

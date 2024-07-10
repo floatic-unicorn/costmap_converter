@@ -38,10 +38,10 @@ void KalmanEigen::init_kf(pair<double,double> stateMat) // mode 설정
 	 	
 
 	 	 // Process Noise Covariance
-		Q(0,0) = 1e-3;
-		Q(1,1) = 1e-3;
-		Q(2,2) = 1e-3;
-		Q(3,3) = 1e-3;
+		Q(0,0) = 1e-1;
+		Q(1,1) = 1e-1;
+		Q(2,2) = 1e-1;
+		Q(3,3) = 1e-1;
 		//Q = Q * 5e-2;
 		
 		// Measurement Noise Covariance
@@ -62,8 +62,8 @@ void KalmanEigen::init_kf(pair<double,double> stateMat) // mode 설정
 pair<double,double> KalmanEigen::predict()
 {
 	A <<
-	1, 0, 0.1, 0, 
-	0, 1, 0, 0.1, 
+	1, 0, 0.05, 0, 
+	0, 1, 0, 0.05, 
 	0, 0, 1, 0, 
 	0, 0, 0, 1;
 	//cout << x(0,0) <<", "<< x(1,0) <<", " << x(2,0) <<", " << x(3,0) << endl;

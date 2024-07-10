@@ -311,11 +311,11 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
       cy = int((kp.y - offset_y_) / parameter_.max_distance_);
     }
 
-
+    int tracker_unmatched_history_;
+    double tracker_matching_distance_;
     Parameters parameter_;          //< active parameters throughout computation
     Parameters parameter_buffered_; //< the buffered parameters that are offered to dynamic reconfigure
     std::mutex parameter_mutex_;  //!< Mutex that keeps track about the ownership of the shared polygon instance
-   
   private:
        
     /**
@@ -335,8 +335,10 @@ class CostmapToPolygonsDBSMCCH : public BaseCostmapToPolygons
     //dynamic_reconfigure::Server<CostmapToPolygonsDBSMCCHConfig>* dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
    
     nav2_costmap_2d::Costmap2D *costmap_; //!< Pointer to the costmap2d
-    std::shared_ptr<nav2_costmap_2d::Costmap2D> static_costmap;
+    //nav2_costmap_2d::ClearCostmapService *ClearCostmap_;
+    //std::shared_ptr<nav2_costmap_2d::Costmap2D> static_costmap;
     std::shared_ptr<nav2_costmap_2d::StaticLayer> st_ptr;
+
 }; 
 
   

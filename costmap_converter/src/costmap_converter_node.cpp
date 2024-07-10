@@ -50,6 +50,13 @@
 
 class CostmapStandaloneConversion : public rclcpp::Node {
  public:
+  bool cluster_visualize_ = false;
+  double update_rate_ = 20.0;
+  double publish_rate_ = 20.0;
+  int cluster_min_points_ = 50;
+  int cluster_max_points_ = 300;
+  int cluster_max_distance_ = 0.5;
+
   CostmapStandaloneConversion(const std::string node_name)
       : rclcpp::Node(node_name),
         converter_loader_("costmap_converter",
@@ -116,7 +123,7 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     
     // std::unique_ptr<message_filters::Subscriber<sensor_msgs::msg::LaserScan,
     // rclcpp_lifecycle::LifecycleNode>> laser_scan_sub_;
-    occupied_min_value_ = 100;
+    occupied_min_value_ = 252;
     declare_parameter("occupied_min_value",
                       rclcpp::ParameterValue(occupied_min_value_));
     get_parameter_or<int>("occupied_min_value", occupied_min_value_,
@@ -125,43 +132,45 @@ class CostmapStandaloneConversion : public rclcpp::Node {
     std::string odom_topic = "/odom";
     declare_parameter("odom_topic", rclcpp::ParameterValue(odom_topic));
     get_parameter_or<std::string>("odom_topic", odom_topic, odom_topic);
-
-    double rate = 10;
-    declare_parameter("spin_rate", rclcpp::ParameterValue(rate));
-    get_parameter_or<double>("spin_rate", rate, rate);
+    
+    costmap_converter::costmap_ros_->get_parameter("update_rate",update_rate_);
+    costmap_converter::costmap_ros_->get_parameter("publish_frequency",publish_rate_);
+    RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set update rate %.1f",update_rate_);
+    RCLCPP_INFO(rclcpp::get_logger("ObstacleTracker"),"set publish rate %.1f",publish_rate_);
+    if(!this->has_parameter("cluster_visualize"))
+    {this->declare_parameter("cluster_visualize",rclcpp::ParameterValue(cluster_visualize_));}
 
     if (converter_) {
       converter_->setOdomTopic(odom_topic);
-      converter_->initialize(
-          std::make_shared<rclcpp::Node>("intra_node", "costmap_converter"));
-      
-      rclcpp_lifecycle::State state;
+      converter_->initialize(n_);
+      // converter_->initialize(
+      //     std::make_shared<rclcpp::Node>("intra_node", "costmap_converter"));
+      //rclcpp_lifecycle::State state;
       //costmap_converter::costmap_ros->on_configure(state);
       //costmap_converter::costmap_ros->on_activate(state);costmap_converter::costmap_ros_
-      converter_->startWorker(std::make_shared<rclcpp::Rate>(rate),
+      converter_->startWorker(std::make_shared<rclcpp::Rate>(update_rate_),
                               costmap_converter::costmap_ros_->getCostmap(), true);
     }
     
-
     pub_timer_ = n_->create_wall_timer(
-        std::chrono::milliseconds(200),
+        std::chrono::milliseconds((int)(1/update_rate_*1000)),
         std::bind(&CostmapStandaloneConversion::publishCallback, this));
   }
 
   void publishCallback() {
     costmap_converter::ObstacleArrayConstPtr obstacles =
         converter_->getObstacles();
-    
-    if (!obstacles) return;
+    if (!obstacles || obstacles->obstacles.size() == 0) return;
     frame_id_ = costmap_converter::costmap_ros_->getGlobalFrameID();
     //obstacles.header.frame_id = frame_id_;
     //obstacles.header.stamp = now();
     obstacle_pub_->publish(*obstacles);
+    if(cluster_visualize_)
+    {//publishAsMarker(frame_id_, *obstacles);
+      publishAsNumber(frame_id_);
+    }
 
-    
 
-    //publishAsMarker(frame_id_, *obstacles);
-    publishAsNumber(frame_id_);
   }
 
   // void publishAsMarker(
