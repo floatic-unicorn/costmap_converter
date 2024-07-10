@@ -19,7 +19,6 @@ def generate_launch_description():
     dot_node = Node(
         package='costmap_converter',
         executable='standalone_converter',
-        prefix=['xterm -e gdb -ex=r --args'],
         parameters=[tracker_params_file],
         output="screen")
     #ld = LaunchDescription()
